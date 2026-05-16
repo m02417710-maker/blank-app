@@ -1,0 +1,48 @@
+"""
+EGX Pro Terminal - Configuration Settings
+"""
+
+# Application Info
+APP_NAME = "EGX Pro Terminal"
+APP_VERSION = "v26.0.0"
+APP_AUTHOR = "m02417710-maker"
+
+# Data Sources
+YAHOO_FINANCE_SUFFIX = ".CA"  # Egyptian stocks suffix on Yahoo Finance
+DEFAULT_PERIOD = "1y"
+DEFAULT_INTERVAL = "1d"
+
+# Technical Analysis Parameters
+RSI_PERIOD = 14
+RSI_OVERBOUGHT = 70
+RSI_OVERSOLD = 30
+
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+
+BOLLINGER_PERIOD = 20
+BOLLINGER_STD = 2
+
+EMA_SHORT = 9
+EMA_MEDIUM = 20
+EMA_LONG = 50
+EMA_TREND = 200
+
+ATR_PERIOD = 14
+ADX_PERIOD = 14
+VOLUME_MA_PERIOD = 20
+
+# Alert Thresholds
+ALERT_RSI_EXTREME = 80
+ALERT_RSI_DEEP = 20
+ALERT_VOLUME_SPIKE = 2.0  # 2x average volume
+ALERT_PRICE_CHANGE = 0.05  # 5% daily change
+
+# UI Settings
+THEME_PRIMARY = "#1f77b4"
+THEME_SECONDARY = "#ff7f0e"
+THEME_BULLISH = "#26a69a"
+THEME_BEARISH = "#ef5350"
+
+CHART_HEIGHT = 600
