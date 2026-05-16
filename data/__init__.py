@@ -1,1 +1,1 @@
-# EGX Pro Terminal - Configuration Module
+# EGX Pro Terminal - Data Module
