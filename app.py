@@ -1,5 +1,4 @@
-
-                fig = chart_engine.create_sector_heatmap(
+fig = chart_engine.create_sector_heatmap(
                     dict(zip(sector_perf['sector'], sector_perf['avg_change']))
                 )
                 st.plotly_chart(fig, use_container_width=True, key="sector_heatmap")
