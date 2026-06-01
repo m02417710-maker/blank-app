@@ -1,5 +1,5 @@
 """
-EGX Pro Terminal v27 - Phoenix Edition
+EGX Pro Terminal v27.2 - Phoenix Edition (Fixed)
 Professional Technical Analysis Platform for Egyptian Stock Exchange
 
 ✅ النسخة المصححة الكاملة مع جميع الإصلاحات
@@ -23,7 +23,6 @@ warnings.filterwarnings('ignore')
 # 1. LOGGING CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
-# إنشاء مجلد السجلات إذا لم يكن موجوداً
 os.makedirs('logs', exist_ok=True)
 
 logging.basicConfig(
@@ -56,7 +55,7 @@ class Theme(Enum):
 class AppConfig:
     """إعدادات التطبيق"""
     APP_NAME = "EGX Pro Terminal"
-    APP_VERSION = "27.1.0 Phoenix"
+    APP_VERSION = "27.2.0 Phoenix"
     CACHE_TTL = 300
     REFRESH_INTERVAL = 60
     MAX_STOCKS = 150
@@ -95,7 +94,6 @@ def get_theme_css() -> str:
     .stApp {{
         background: linear-gradient(135deg, {Theme.BG_DARK.value} 0%, {Theme.PRIMARY.value}33 50%, {Theme.BG_SECONDARY.value} 100%);
     }}
-
     .stButton>button {{
         background: linear-gradient(135deg, {Theme.PRIMARY.value} 0%, {Theme.SECONDARY.value} 100%);
         color: white;
@@ -104,19 +102,16 @@ def get_theme_css() -> str:
         font-weight: bold;
         transition: all 0.3s ease;
     }}
-
     .stButton>button:hover {{
         background: linear-gradient(135deg, {Theme.SECONDARY.value} 0%, {Theme.PRIMARY.value} 100%);
         transform: scale(1.05);
     }}
-
     h1, h2, h3 {{
         background: linear-gradient(90deg, {Theme.PRIMARY.value}, {Theme.SECONDARY.value}, {Theme.ACCENT.value});
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
     }}
-
     .metric-card {{
         background: linear-gradient(135deg, {Theme.BG_CARD.value} 0%, {Theme.BG_SECONDARY.value} 100%);
         border-radius: 15px;
@@ -138,24 +133,15 @@ def safe_percentage(current: float, previous: float) -> float:
         return 0.0
 
 def validate_symbol(symbol: str) -> Tuple[bool, str]:
-    """
-    التحقق من صحة رمز السهم
-
-    Returns:
-        Tuple[bool, str]: (صحيح/خطأ, الرمز المُنظف أو رسالة الخطأ)
-    """
+    """التحقق من صحة رمز السهم"""
     if not symbol or not isinstance(symbol, str):
         return False, "رمز السهم لا يمكن أن يكون فارغاً"
-
     symbol = symbol.upper().strip()
-
     if not symbol:
         return False, "رمز السهم لا يمكن أن يكون فارغاً"
-
     if symbol not in EGXConfig.STOCKS:
         available = ", ".join(list(EGXConfig.STOCKS.keys())[:5])
         return False, f"الرمز '{symbol}' غير موجود في EGX\nأمثلة: {available}..."
-
     logger.info(f"Symbol validated: {symbol}")
     return True, symbol
 
@@ -166,7 +152,7 @@ def get_cairo_time() -> datetime:
 def format_number(num: float, decimals: int = 2) -> str:
     """تنسيق الأرقام بصيغة عربية"""
     try:
-        if num is None:
+        if num is None or np.isnan(num):
             return "N/A"
         formatted = f"{num:,.{decimals}f}"
         return formatted.replace(',', ' ')
@@ -180,40 +166,23 @@ def format_currency(num: float) -> str:
 def generate_dummy_data(symbol: str, days: int = 100) -> pd.DataFrame:
     """توليد بيانات وهمية واقعية للاختبار"""
     np.random.seed(hash(symbol) % 2**32)
-
     dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
-
-    # بدء من سعر أولي عشوائي بين 5 و 50
     base_price = np.random.uniform(5, 50)
-
-    # توليد حركة عشوائية (Random Walk) مع اتجاه طفيف
     returns = np.random.normal(0.001, 0.02, days)
     price = base_price * np.exp(np.cumsum(returns))
-
-    # التأكد من أن جميع الأسعار موجبة
     price = np.maximum(price, 0.01)
-
-    # توليد Open, High, Low, Close واقعية
     daily_volatility = np.abs(np.random.randn(days)) * 0.02 * price
-
     open_prices = price * (1 + np.random.randn(days) * 0.005)
     close_prices = price
-
     high_prices = np.maximum(open_prices, close_prices) + daily_volatility
     low_prices = np.minimum(open_prices, close_prices) - daily_volatility
-
-    # التأكد من High >= Low
     low_prices = np.minimum(low_prices, high_prices - 0.01)
-
-    # التأكد من أن جميع الأسعار موجبة
     low_prices = np.maximum(low_prices, 0.01)
     open_prices = np.maximum(open_prices, low_prices + 0.01)
     close_prices = np.maximum(close_prices, low_prices + 0.01)
     high_prices = np.maximum(high_prices, open_prices + 0.01)
     high_prices = np.maximum(high_prices, close_prices + 0.01)
-
     volume = np.random.randint(100000, 10000000, days)
-
     df = pd.DataFrame({
         'date': dates,
         'open': open_prices,
@@ -222,22 +191,19 @@ def generate_dummy_data(symbol: str, days: int = 100) -> pd.DataFrame:
         'close': close_prices,
         'volume': volume
     })
-
     df.set_index('date', inplace=True)
-
     return df
 
 # ═══════════════════════════════════════════════════════════════
-# 4. TECHNICAL INDICATORS
+# 4. TECHNICAL INDICATORS (FIXED)
 # ═══════════════════════════════════════════════════════════════
 
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """حساب مؤشر القوة النسبية RSI"""
+    """حساب مؤشر القوة النسبة RSI"""
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-
-    rs = gain / loss
+    rs = gain / loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
@@ -267,10 +233,9 @@ def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: in
     return macd_line, signal_line, histogram
 
 def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-    """حساب ADX المبسط"""
+    """حساب ADX المُصلح - إصلاح قسمة على صفر"""
     plus_dm = high.diff()
     minus_dm = -low.diff()
-
     plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
     minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
 
@@ -279,13 +244,13 @@ def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int
     tr3 = abs(low - close.shift(1))
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    atr = tr.rolling(window=period).mean()
+    atr = tr.rolling(window=period).mean().replace(0, np.nan)
     plus_di = 100 * plus_dm.rolling(window=period).mean() / atr
     minus_di = 100 * minus_dm.rolling(window=period).mean() / atr
 
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    di_sum = (plus_di + minus_di).replace(0, np.nan)
+    dx = 100 * abs(plus_di - minus_di) / di_sum
     adx = dx.rolling(window=period).mean()
-
     return adx
 
 # ═══════════════════════════════════════════════════════════════
@@ -325,8 +290,9 @@ def init_session_state() -> None:
         'auto_refresh': False,
         'refresh_interval': AppConfig.REFRESH_INTERVAL,
         'last_rerun_time': 0,
+        'alert_to_delete': None,
+        'watchlist_to_delete': None,
     }
-
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -343,29 +309,18 @@ def load_stock_data(symbol: str) -> Optional[pd.DataFrame]:
     """تحميل بيانات الأسهم مع Caching"""
     try:
         logger.info(f"Loading data for {symbol}")
-
-        # في الإنتاج: استخدم yfinance
-        # import yfinance as yf
-        # df = yf.download(get_yahoo_symbol(symbol), period='1y', progress=False)
-
-        # للاختبار: بيانات وهمية واقعية
         df = generate_dummy_data(symbol)
-
         if df is None or df.empty:
             logger.warning(f"No data for {symbol}")
             return None
-
-        # إضافة المؤشرات الفنية
         df['rsi'] = calculate_rsi(df['close'])
         df['ema_20'] = calculate_ema(df['close'], 20)
         df['sma_20'] = calculate_sma(df['close'], 20)
         df['bb_upper'], df['bb_middle'], df['bb_lower'] = calculate_bollinger_bands(df['close'])
         df['macd'], df['macd_signal'], df['macd_hist'] = calculate_macd(df['close'])
         df['adx'] = calculate_adx(df['high'], df['low'], df['close'])
-
         logger.info(f"Loaded {len(df)} rows for {symbol}")
         return df
-
     except Exception as e:
         logger.error(f"Error loading data: {str(e)}")
         return None
@@ -375,13 +330,11 @@ def get_current_data() -> Optional[pd.DataFrame]:
     try:
         symbol = st.session_state.selected_symbol
         df = load_stock_data(symbol)
-
         if df is not None:
             st.session_state.analysis_data = df
             st.session_state.last_update = get_cairo_time()
             return df
         return None
-
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         st.error(f"❌ خطأ: {str(e)}")
@@ -394,7 +347,6 @@ def get_current_data() -> Optional[pd.DataFrame]:
 def render_sidebar() -> None:
     """عرض الشريط الجانبي"""
     try:
-        # Logo
         st.sidebar.markdown(f"""
         <div style="text-align: center; padding: 20px 0;">
             <div style="font-size: 3em;">📈</div>
@@ -441,8 +393,6 @@ def render_sidebar() -> None:
 
         # Stock Selector
         st.sidebar.markdown("### 🎯 اختيار السهم")
-
-        # استخدام selectbox أفضل من text_input لتجنب الأخطاء
         symbol_options = list(EGXConfig.STOCKS.keys())
         current_index = symbol_options.index(st.session_state.selected_symbol) if st.session_state.selected_symbol in symbol_options else 0
 
@@ -462,7 +412,6 @@ def render_sidebar() -> None:
         st.sidebar.markdown("**الأسهم الشهيرة:**")
         popular = list(EGXConfig.STOCKS.keys())[:4]
         cols = st.sidebar.columns(2)
-
         for i, sym in enumerate(popular):
             with cols[i % 2]:
                 if st.button(sym, use_container_width=True, key=f"pop_{sym}_btn"):
@@ -483,6 +432,14 @@ def render_sidebar() -> None:
             key="auto_refresh_toggle"
         )
 
+        if st.session_state.auto_refresh:
+            st.sidebar.info(f"سيتم التحديث كل {AppConfig.REFRESH_INTERVAL} ثانية")
+            import time
+            current_time = time.time()
+            if current_time - st.session_state.last_rerun_time > AppConfig.REFRESH_INTERVAL:
+                st.session_state.last_rerun_time = current_time
+                st.rerun()
+
         # Footer
         st.sidebar.markdown("---")
         st.sidebar.markdown("""
@@ -497,11 +454,11 @@ def render_sidebar() -> None:
         st.sidebar.error(f"❌ خطأ: {str(e)}")
 
 # ═══════════════════════════════════════════════════════════════
-# 9. PAGE RENDERERS
+# 9. PAGE RENDERERS (FIXED)
 # ═══════════════════════════════════════════════════════════════
 
 def render_dashboard() -> None:
-    """عرض لوحة المعلومات"""
+    """عرض لوحة المعلومات - مُصلح"""
     try:
         st.markdown("""
         <div style="text-align: center; padding: 30px 0;">
@@ -511,7 +468,6 @@ def render_dashboard() -> None:
         """, unsafe_allow_html=True)
 
         st.markdown("### 📊 نظرة السوق")
-
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("📈 أكبر رابح", "TMGH", "+5.23%", delta_color="normal")
@@ -530,43 +486,45 @@ def render_dashboard() -> None:
 
         if df is not None and not df.empty:
             col1, col2, col3, col4, col5 = st.columns(5)
-
             last_price = df['close'].iloc[-1]
             prev_price = df['close'].iloc[-2] if len(df) > 1 else last_price
             change_pct = safe_percentage(last_price, prev_price)
 
-            # حساب الإشارة
             rsi_val = df['rsi'].iloc[-1] if 'rsi' in df.columns else 50
             macd_val = df['macd'].iloc[-1] if 'macd' in df.columns else 0
+            macd_signal_val = df['macd_signal'].iloc[-1] if 'macd_signal' in df.columns else 0
+            adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 25
+            ema_val = df['ema_20'].iloc[-1] if 'ema_20' in df.columns else last_price
 
-            signal = "HOLD"
-            signal_color = "⚪"
-            if rsi_val < 30 and macd_val > 0:
+            # إصلاح: شروط إشارة أكثر واقعية
+            if rsi_val < 35 or (macd_val > macd_signal_val and last_price > ema_val):
                 signal = "BUY"
                 signal_color = "🟢"
-            elif rsi_val > 70 and macd_val < 0:
+            elif rsi_val > 65 or (macd_val < macd_signal_val and last_price < ema_val):
                 signal = "SELL"
                 signal_color = "🔴"
+            else:
+                signal = "HOLD"
+                signal_color = "⚪"
 
             with col1:
                 st.metric("💰 السعر", format_currency(last_price), f"{change_pct:+.2f}%")
             with col2:
-                st.metric("📊 RSI", f"{rsi_val:.1f}", "محايد" if 30 <= rsi_val <= 70 else ("تشبع شراء" if rsi_val > 70 else "تشبع بيع"))
+                rsi_status = "محايد" if 35 <= rsi_val <= 65 else ("تشبع شراء" if rsi_val > 65 else "تشبع بيع")
+                st.metric("📊 RSI", f"{rsi_val:.1f}", rsi_status)
             with col3:
-                macd_signal = "✅" if macd_val > 0 else "❌"
-                st.metric("📈 MACD", f"{macd_val:.4f}", macd_signal)
+                macd_status = "✅ إيجابي" if macd_val > macd_signal_val else "❌ سلبي"
+                st.metric("📈 MACD", f"{macd_val:.4f}", macd_status)
             with col4:
-                adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 25
                 adx_text = "قوي" if adx_val > 25 else "ضعيف"
                 st.metric("📉 ADX", f"{adx_val:.1f}", adx_text)
             with col5:
-                st.metric("🎯 الإشارة", f"{signal_color} {signal}", "75%")
+                st.metric("🎯 الإشارة", f"{signal_color} {signal}", "تحليل فني")
 
-            # Chart
+            # Chart with Candlestick + EMA + BB
             st.markdown("### 📈 حركة السعر")
             fig = go.Figure()
 
-            # شمعة اليابانية
             fig.add_trace(go.Candlestick(
                 x=df.index,
                 open=df['open'],
@@ -578,70 +536,52 @@ def render_dashboard() -> None:
                 decreasing_line_color=Theme.ERROR.value
             ))
 
-            # EMA 20
             if 'ema_20' in df.columns:
                 fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df['ema_20'],
-                    mode='lines',
-                    name='EMA 20',
+                    x=df.index, y=df['ema_20'],
+                    mode='lines', name='EMA 20',
                     line=dict(color=Theme.PRIMARY.value, width=1.5, dash='dash')
                 ))
 
-            # Bollinger Bands
-            if 'bb_upper' in df.columns:
+            if 'bb_upper' in df.columns and 'bb_lower' in df.columns:
                 fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df['bb_upper'],
-                    mode='lines',
-                    name='BB Upper',
-                    line=dict(color=Theme.ACCENT.value, width=1),
-                    opacity=0.5
+                    x=df.index, y=df['bb_upper'],
+                    mode='lines', name='BB Upper',
+                    line=dict(color=Theme.ACCENT.value, width=1), opacity=0.5,
+                    legendgroup='bb', showlegend=True
                 ))
                 fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df['bb_lower'],
-                    mode='lines',
-                    name='BB Lower',
-                    line=dict(color=Theme.ACCENT.value, width=1),
-                    opacity=0.5,
-                    fill='tonexty',
-                    fillcolor=f'rgba(240, 147, 251, 0.1)'
+                    x=df.index, y=df['bb_lower'],
+                    mode='lines', name='BB Lower',
+                    line=dict(color=Theme.ACCENT.value, width=1), opacity=0.5,
+                    fill='tonexty', fillcolor='rgba(240, 147, 251, 0.1)',
+                    legendgroup='bb', showlegend=True
                 ))
 
             fig.update_layout(
                 title=f"تطور سعر {symbol} - {EGXConfig.STOCKS.get(symbol, '')}",
-                xaxis_title="التاريخ",
-                yaxis_title="السعر (EGP)",
-                template='plotly_dark',
-                height=500,
-                hovermode='x unified',
-                xaxis_rangeslider_visible=False
+                xaxis_title="التاريخ", yaxis_title="السعر (EGP)",
+                template='plotly_dark', height=500,
+                hovermode='x unified', xaxis_rangeslider_visible=False
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # حجم التداول
+            # Volume chart
             st.markdown("### 📊 حجم التداول")
             fig_vol = go.Figure()
             fig_vol.add_trace(go.Bar(
-                x=df.index,
-                y=df['volume'],
-                name='الحجم',
-                marker_color=Theme.PRIMARY.value
+                x=df.index, y=df['volume'],
+                name='الحجم', marker_color=Theme.PRIMARY.value
             ))
             fig_vol.update_layout(
-                template='plotly_dark',
-                height=300,
-                xaxis_title="التاريخ",
-                yaxis_title="الحجم"
+                template='plotly_dark', height=300,
+                xaxis_title="التاريخ", yaxis_title="الحجم"
             )
             st.plotly_chart(fig_vol, use_container_width=True)
-
         else:
             st.warning(f"⚠️ لا توجد بيانات متاحة للرمز: {symbol}")
 
         logger.info("Dashboard rendered")
-
     except Exception as e:
         logger.error(f"Dashboard error: {str(e)}")
         st.error(f"❌ خطأ: {str(e)}")
@@ -649,13 +589,10 @@ def render_dashboard() -> None:
 def render_analysis() -> None:
     """عرض صفحة التحليل"""
     st.markdown("## 🔍 تحليل تفصيلي")
-
     symbol = st.session_state.selected_symbol
     st.info(f"📊 تحليل السهم: {symbol} - {EGXConfig.STOCKS.get(symbol, '')}")
-
     df = get_current_data()
     if df is not None and not df.empty:
-        # إحصائيات
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("أعلى سعر", format_currency(df['high'].max()))
@@ -668,15 +605,13 @@ def render_analysis() -> None:
 
         st.subheader("البيانات الأخيرة مع المؤشرات")
         display_df = df.tail(20).copy()
-        display_df.columns = ['الافتتاح', 'الأعلى', 'الأدنى', 'الإغلاق', 'الحجم', 
-                              'RSI', 'EMA 20', 'SMA 20', 'BB Upper', 'BB Middle', 
+        display_df.columns = ['الافتتاح', 'الأعلى', 'الأدنى', 'الإغلاق', 'الحجم',
+                              'RSI', 'EMA 20', 'SMA 20', 'BB Upper', 'BB Middle',
                               'BB Lower', 'MACD', 'MACD Signal', 'MACD Hist', 'ADX']
         st.dataframe(display_df, use_container_width=True)
 
-        # جدول المؤشرات
         st.subheader("📊 ملخص المؤشرات الفنية")
         latest = df.iloc[-1]
-
         indicators = {
             'RSI (14)': f"{latest['rsi']:.2f}" if 'rsi' in df.columns else "N/A",
             'EMA 20': format_currency(latest['ema_20']) if 'ema_20' in df.columns else "N/A",
@@ -687,21 +622,17 @@ def render_analysis() -> None:
             'BB Upper': format_currency(latest['bb_upper']) if 'bb_upper' in df.columns else "N/A",
             'BB Lower': format_currency(latest['bb_lower']) if 'bb_lower' in df.columns else "N/A",
         }
-
         ind_df = pd.DataFrame(list(indicators.items()), columns=['المؤشر', 'القيمة'])
         st.table(ind_df)
     else:
         st.warning("لا توجد بيانات متاحة")
-
     logger.info(f"Analysis page rendered for {symbol}")
 
 def render_charts() -> None:
-    """عرض صفحة الرسوم البيانية"""
+    """عرض صفحة الرسوم البيانية - مُصلح"""
     st.markdown("## 📈 الرسوم البيانية المتقدمة")
-
     symbol = st.session_state.selected_symbol
     df = get_current_data()
-
     if df is None or df.empty:
         st.warning("لا توجد بيانات متاحة")
         return
@@ -720,11 +651,8 @@ def render_charts() -> None:
 
     if show_candle:
         fig.add_trace(go.Candlestick(
-            x=df.index,
-            open=df['open'],
-            high=df['high'],
-            low=df['low'],
-            close=df['close'],
+            x=df.index, open=df['open'], high=df['high'],
+            low=df['low'], close=df['close'],
             name='السهم',
             increasing_line_color=Theme.SUCCESS.value,
             decreasing_line_color=Theme.ERROR.value
@@ -744,28 +672,26 @@ def render_charts() -> None:
             line=dict(color=Theme.WARNING.value, width=2, dash='dot')
         ))
 
-    if show_bb and 'bb_upper' in df.columns:
+    # إصلاح: Bollinger Bands - إضافة Upper أولاً ثم Lower مع fill
+    if show_bb and 'bb_upper' in df.columns and 'bb_lower' in df.columns:
         fig.add_trace(go.Scatter(
             x=df.index, y=df['bb_upper'],
             mode='lines', name='BB Upper',
-            line=dict(color=Theme.ACCENT.value, width=1),
-            opacity=0.7
+            line=dict(color=Theme.ACCENT.value, width=1), opacity=0.7,
+            legendgroup='bb', showlegend=True
         ))
         fig.add_trace(go.Scatter(
             x=df.index, y=df['bb_lower'],
             mode='lines', name='BB Lower',
-            line=dict(color=Theme.ACCENT.value, width=1),
-            opacity=0.7,
-            fill='tonexty',
-            fillcolor=f'rgba(240, 147, 251, 0.1)'
+            line=dict(color=Theme.ACCENT.value, width=1), opacity=0.7,
+            fill='tonexty', fillcolor='rgba(240, 147, 251, 0.1)',
+            legendgroup='bb', showlegend=True
         ))
 
     fig.update_layout(
         title=f"الرسم البياني المتقدم - {symbol}",
-        template='plotly_dark',
-        height=600,
-        xaxis_rangeslider_visible=False,
-        hovermode='x unified'
+        template='plotly_dark', height=600,
+        xaxis_rangeslider_visible=False, hovermode='x unified'
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -799,8 +725,7 @@ def render_charts() -> None:
             x=df.index, y=df['rsi'],
             mode='lines', name='RSI',
             line=dict(color=Theme.PRIMARY.value, width=2),
-            fill='tozeroy',
-            fillcolor='rgba(102, 126, 234, 0.2)'
+            fill='tozeroy', fillcolor='rgba(102, 126, 234, 0.2)'
         ))
         fig_rsi.add_hline(y=70, line_dash="dash", line_color=Theme.ERROR.value, annotation_text="تشبع شراء")
         fig_rsi.add_hline(y=30, line_dash="dash", line_color=Theme.SUCCESS.value, annotation_text="تشبع بيع")
@@ -808,8 +733,16 @@ def render_charts() -> None:
         st.plotly_chart(fig_rsi, use_container_width=True)
 
 def render_alerts() -> None:
-    """عرض صفحة التنبيهات"""
+    """عرض صفحة التنبيهات - مُصلح (بدون st.rerun داخل الحلقة)"""
     st.markdown("## 🔔 إدارة التنبيهات")
+
+    # معالجة حذف التنبيهات بأمان
+    if st.session_state.alert_to_delete is not None:
+        idx = st.session_state.alert_to_delete
+        if 0 <= idx < len(st.session_state.alerts):
+            st.session_state.alerts.pop(idx)
+        st.session_state.alert_to_delete = None
+        st.rerun()
 
     # عرض التنبيهات الحالية
     if st.session_state.alerts:
@@ -817,10 +750,11 @@ def render_alerts() -> None:
         for i, alert in enumerate(st.session_state.alerts):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.info(f"{alert['type']} - {alert['symbol']} عند {alert['value']}")
+                st.info(f"{alert['type']} - {alert['symbol']} عند {alert['value']} ({alert['condition']})")
             with col2:
+                # إصلاح: استخدام session_state بدلاً من st.rerun مباشرة
                 if st.button("حذف", key=f"del_alert_{i}"):
-                    st.session_state.alerts.pop(i)
+                    st.session_state.alert_to_delete = i
                     st.rerun()
     else:
         st.info("لا توجد تنبيهات نشطة")
@@ -849,15 +783,13 @@ def render_alerts() -> None:
             }
             st.session_state.alerts.append(new_alert)
             st.success(f"✅ تم إنشاء تنبيه {alert_type} لـ {alert_symbol} عند {alert_value}")
-            st.rerun()
+            # إصلاح: لا st.rerun() هنا بعد form submission
 
 def render_ai() -> None:
-    """عرض صفحة التنبؤات"""
+    """عرض صفحة التنبؤات - مُصلح (signal معرّف)"""
     st.markdown("## 🤖 التنبؤات بالذكاء الاصطناعي")
-
     symbol = st.session_state.selected_symbol
     df = get_current_data()
-
     if df is None or df.empty:
         st.warning("لا توجد بيانات متاحة")
         return
@@ -868,7 +800,6 @@ def render_ai() -> None:
         st.write("⏳ توليد التنبؤات...")
         st.write("✅ اكتمل!")
 
-    # تحليل بسيط للاتجاه
     last_price = df['close'].iloc[-1]
     sma_20 = df['close'].rolling(20).mean().iloc[-1]
     sma_50 = df['close'].rolling(50).mean().iloc[-1]
@@ -876,7 +807,6 @@ def render_ai() -> None:
     trend = "صعود 📈" if last_price > sma_20 > sma_50 else ("هبوط 📉" if last_price < sma_20 < sma_50 else "تذبذب ↔️")
     confidence = 75 if last_price > sma_20 > sma_50 or last_price < sma_20 < sma_50 else 50
 
-    # هدف سعري بسيط
     target = last_price * 1.1 if trend == "صعود 📈" else (last_price * 0.95 if trend == "هبوط 📉" else last_price)
     stop_loss = last_price * 0.95 if trend == "صعود 📈" else (last_price * 1.05 if trend == "هبوط 📉" else last_price * 0.98)
 
@@ -895,6 +825,14 @@ def render_ai() -> None:
     rsi_signal = "تشبع بيع (شراء محتمل)" if latest['rsi'] < 30 else ("تشبع شراء (بيع محتمل)" if latest['rsi'] > 70 else "محايد")
     macd_signal = "إيجابي" if latest['macd'] > latest['macd_signal'] else "سلبي"
 
+    # إصلاح: تعريف signal داخل الدالة
+    if latest['rsi'] < 35 or (latest['macd'] > latest['macd_signal'] and last_price > latest['ema_20']):
+        signal = "BUY 🟢"
+    elif latest['rsi'] > 65 or (latest['macd'] < latest['macd_signal'] and last_price < latest['ema_20']):
+        signal = "SELL 🔴"
+    else:
+        signal = "HOLD ⚪"
+
     analysis_text = f"""
     **تحليل {symbol}:**
 
@@ -905,14 +843,20 @@ def render_ai() -> None:
 
     **التوصية**: {signal}
     """
-
     st.markdown(analysis_text)
 
 def render_watchlist() -> None:
-    """عرض قائمة المراقبة"""
+    """عرض قائمة المراقبة - مُصلح"""
     st.markdown("## 📋 قائمة المراقبة")
 
-    # إضافة سهم للقائمة
+    # معالجة الحذف بأمان
+    if st.session_state.watchlist_to_delete is not None:
+        sym = st.session_state.watchlist_to_delete
+        if sym in st.session_state.watchlist:
+            st.session_state.watchlist.remove(sym)
+        st.session_state.watchlist_to_delete = None
+        st.rerun()
+
     col1, col2 = st.columns([3, 1])
     with col1:
         new_stock = st.selectbox("إضافة سهم", list(EGXConfig.STOCKS.keys()), key="watchlist_add")
@@ -925,7 +869,6 @@ def render_watchlist() -> None:
             else:
                 st.warning("السهم موجود بالفعل")
 
-    # عرض القائمة
     if st.session_state.watchlist:
         st.markdown("### الأسهم المراقبة")
         for i, sym in enumerate(st.session_state.watchlist):
@@ -933,7 +876,6 @@ def render_watchlist() -> None:
             with col1:
                 st.write(f"**{sym}** - {EGXConfig.STOCKS.get(sym, '')}")
             with col2:
-                # محاكاة بيانات
                 df = generate_dummy_data(sym, days=5)
                 last = df['close'].iloc[-1]
                 prev = df['close'].iloc[-2]
@@ -941,24 +883,21 @@ def render_watchlist() -> None:
                 st.write(f"EGP {last:.2f} ({change:+.2f}%)")
             with col3:
                 if st.button("🗑️", key=f"remove_{sym}_{i}"):
-                    st.session_state.watchlist.remove(sym)
+                    st.session_state.watchlist_to_delete = sym
                     st.rerun()
     else:
         st.info("قائمة المراقبة فارغة. أضف أسهم للمتابعة")
 
 def render_backtest() -> None:
-    """عرض الاختبار الخلفي"""
+    """عرض الاختبار الخلفي - مُصلح (BB strategy مُضافة)"""
     st.markdown("## 🧪 الاختبار الخلفي")
     st.info("اختبر استراتيجيات التداول على بيانات تاريخية")
-
     symbol = st.session_state.selected_symbol
     df = get_current_data()
-
     if df is None or df.empty:
         st.warning("لا توجد بيانات متاحة")
         return
 
-    # إعدادات الاستراتيجية
     st.markdown("### ⚙️ إعدادات الاستراتيجية")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -966,58 +905,67 @@ def render_backtest() -> None:
     with col2:
         initial_capital = st.number_input("رأس المال الأولي", min_value=1000, value=100000, step=1000, key="backtest_capital")
     with col3:
-        if st.button("🚀 بدء الاختبار", key="run_backtest"):
-            with st.spinner("جاري الاختبار..."):
-                # محاكاة بسيطة
-                trades = []
-                capital = initial_capital
-                position = 0
+        run_test = st.button("🚀 بدء الاختبار", key="run_backtest")
 
-                for i in range(20, len(df)):
-                    row = df.iloc[i]
-                    prev = df.iloc[i-1]
+    if run_test:
+        with st.spinner("جاري الاختبار..."):
+            trades = []
+            capital = initial_capital
+            position = 0
 
-                    if strategy == "RSI":
-                        if row['rsi'] < 30 and position == 0:
-                            position = capital / row['close']
-                            capital = 0
-                            trades.append({'type': 'شراء', 'price': row['close'], 'date': df.index[i]})
-                        elif row['rsi'] > 70 and position > 0:
-                            capital = position * row['close']
-                            position = 0
-                            trades.append({'type': 'بيع', 'price': row['close'], 'date': df.index[i]})
+            for i in range(20, len(df)):
+                row = df.iloc[i]
+                prev = df.iloc[i-1]
 
-                    elif strategy == "MACD Crossover":
-                        if prev['macd'] < prev['macd_signal'] and row['macd'] > row['macd_signal'] and position == 0:
-                            position = capital / row['close']
-                            capital = 0
-                            trades.append({'type': 'شراء', 'price': row['close'], 'date': df.index[i]})
-                        elif prev['macd'] > prev['macd_signal'] and row['macd'] < row['macd_signal'] and position > 0:
-                            capital = position * row['close']
-                            position = 0
-                            trades.append({'type': 'بيع', 'price': row['close'], 'date': df.index[i]})
+                if strategy == "RSI":
+                    if row['rsi'] < 30 and position == 0:
+                        position = capital / row['close']
+                        capital = 0
+                        trades.append({'type': 'شراء', 'price': row['close'], 'date': df.index[i]})
+                    elif row['rsi'] > 70 and position > 0:
+                        capital = position * row['close']
+                        position = 0
+                        trades.append({'type': 'بيع', 'price': row['close'], 'date': df.index[i]})
 
-                # النتيجة النهائية
-                final_value = capital + (position * df['close'].iloc[-1] if position > 0 else 0)
-                profit = final_value - initial_capital
-                profit_pct = safe_percentage(final_value, initial_capital)
+                elif strategy == "MACD Crossover":
+                    if prev['macd'] < prev['macd_signal'] and row['macd'] > row['macd_signal'] and position == 0:
+                        position = capital / row['close']
+                        capital = 0
+                        trades.append({'type': 'شراء', 'price': row['close'], 'date': df.index[i]})
+                    elif prev['macd'] > prev['macd_signal'] and row['macd'] < row['macd_signal'] and position > 0:
+                        capital = position * row['close']
+                        position = 0
+                        trades.append({'type': 'بيع', 'price': row['close'], 'date': df.index[i]})
 
-                st.success(f"✅ اكتمل الاختبار!")
-                st.metric("الربح/الخسارة", format_currency(profit), f"{profit_pct:+.2f}%")
-                st.metric("القيمة النهائية", format_currency(final_value))
-                st.metric("عدد الصفقات", len(trades))
+                # إصلاح: إضافة استراتيجية Bollinger Bands
+                elif strategy == "Bollinger Bands":
+                    if row['close'] < row['bb_lower'] and position == 0:
+                        position = capital / row['close']
+                        capital = 0
+                        trades.append({'type': 'شراء', 'price': row['close'], 'date': df.index[i]})
+                    elif row['close'] > row['bb_upper'] and position > 0:
+                        capital = position * row['close']
+                        position = 0
+                        trades.append({'type': 'بيع', 'price': row['close'], 'date': df.index[i]})
 
-                if trades:
-                    trades_df = pd.DataFrame(trades)
-                    st.markdown("### 📋 سجل الصفقات")
-                    st.dataframe(trades_df, use_container_width=True)
+            final_value = capital + (position * df['close'].iloc[-1] if position > 0 else 0)
+            profit = final_value - initial_capital
+            profit_pct = safe_percentage(final_value, initial_capital)
+
+            st.success("✅ اكتمل الاختبار!")
+            st.metric("الربح/الخسارة", format_currency(profit), f"{profit_pct:+.2f}%")
+            st.metric("القيمة النهائية", format_currency(final_value))
+            st.metric("عدد الصفقات", len(trades))
+
+            if trades:
+                trades_df = pd.DataFrame(trades)
+                st.markdown("### 📋 سجل الصفقات")
+                st.dataframe(trades_df, use_container_width=True)
 
 def render_market() -> None:
     """عرض نظرة السوق"""
     st.markdown("## 🏢 نظرة السوق")
     st.info("مقارنة القطاعات والأسهم")
-
-    # عرض الأسهم حسب القطاع
     for sector, symbols in EGXConfig.SECTORS.items():
         st.markdown(f"### {sector}")
         cols = st.columns(len(symbols))
@@ -1027,7 +975,6 @@ def render_market() -> None:
                 last = df['close'].iloc[-1]
                 prev = df['close'].iloc[-2]
                 change = safe_percentage(last, prev)
-
                 st.metric(
                     f"{sym}",
                     f"EGP {last:.2f}",
@@ -1038,44 +985,35 @@ def render_market() -> None:
 def render_settings() -> None:
     """عرض الإعدادات"""
     st.markdown("## ⚙️ الإعدادات")
-
     st.markdown("### 🎨 المظهر")
     theme = st.selectbox("المظهر", ["Dark", "Light"], key="settings_theme")
-
     st.markdown("### 🔔 الإخطارات")
     st.session_state.notifications_enabled = st.checkbox(
         "تفعيل الإخطارات",
         value=st.session_state.notifications_enabled,
         key="settings_notifications"
     )
-
     st.markdown("### 📊 البيانات")
     if st.button("🗑️ مسح ذاكرة التخزين المؤقت", key="clear_cache"):
         load_stock_data.clear()
         st.success("✅ تم مسح ذاكرة التخزين المؤقت")
-
     if st.button("🗑️ حذف جميع التنبيهات", key="clear_alerts"):
         st.session_state.alerts = []
         st.success("✅ تم حذف جميع التنبيهات")
-
     if st.button("🗑️ مسح قائمة المراقبة", key="clear_watchlist"):
         st.session_state.watchlist = []
         st.success("✅ تم مسح قائمة المراقبة")
-
     st.markdown("### ℹ️ عن التطبيق")
     st.info(f"""
     **{AppConfig.APP_NAME}**
     الإصدار: {AppConfig.APP_VERSION}
-
     منصة تحليل تقني متقدمة لسوق الأسهم المصرية (EGX)
-
     المميزات:
     - تحليل فني متقدم مع مؤشرات RSI, MACD, Bollinger Bands, ADX
     - رسوم بيانية تفاعلية
     - تنبيهات أسعار مخصصة
     - اختبار خلفي للاستراتيجيات
     - قائمة مراقبة شخصية
-
     ⚠️ تنبيه: جميع البيانات للأغراض التعليمية فقط
     """)
 
@@ -1087,11 +1025,8 @@ def main() -> None:
     """الدالة الرئيسية"""
     try:
         logger.info("Application started")
-
         render_sidebar()
-
         page = st.session_state.page
-
         if page == 'Dashboard':
             render_dashboard()
         elif page == 'Analysis':
@@ -1112,9 +1047,7 @@ def main() -> None:
             render_settings()
         else:
             st.error("❌ صفحة غير موجودة")
-
         logger.info(f"Rendered page: {page}")
-
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
         st.error(f"❌ خطأ في التطبيق: {str(e)}")
