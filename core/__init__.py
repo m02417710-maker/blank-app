@@ -1,3 +1,1 @@
-"""
-EGX Pro Terminal - Core Analysis Package
-"""
+"""EGX Pro Terminal - Core Module"""
