@@ -1,3 +1,1 @@
-"""
-EGX Pro Terminal - Pages Package
-"""
+"""EGX Pro Terminal - Pages Module"""
