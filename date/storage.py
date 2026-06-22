@@ -1,356 +1,223 @@
 """
-EGX Pro Terminal v27 - Local Storage Engine
-SQLite-based persistence with backup and optimization
+EGX Pro Terminal v34 - Data Storage Module
+SQLite-based local storage for alerts, watchlists, and user preferences
 """
 
 import sqlite3
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
 import json
+import pandas as pd
+from datetime import datetime
+from typing import Dict, List, Optional, Any
 import os
-import shutil
 import logging
-from contextlib import contextmanager
-
-from config.settings import db_config, app_config
 
 logger = logging.getLogger(__name__)
 
 class LocalStorage:
-    def __init__(self):
-        self.db_path = db_config.DB_PATH
+    def __init__(self, db_path: str = "data/egx_terminal.db"):
+        self.db_path = db_path
         self._init_db()
 
-    @contextmanager
-    def _get_connection(self):
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
-
     def _init_db(self):
-        with self._get_connection() as conn:
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS watchlist (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    target_price REAL,
-                    stop_loss REAL,
-                    notes TEXT,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol)
-                )
-            """)
-
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS alerts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
                     alert_type TEXT NOT NULL,
-                    condition TEXT NOT NULL,
+                    target_value REAL,
+                    severity TEXT DEFAULT 'MEDIUM',
+                    created_at TEXT,
+                    triggered_at TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    metadata TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS watchlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    symbols TEXT NOT NULL,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS preferences (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    quantity INTEGER,
                     price REAL,
-                    message TEXT,
-                    severity TEXT DEFAULT 'info',
-                    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    acknowledged BOOLEAN DEFAULT 0
+                    total_value REAL,
+                    strategy TEXT,
+                    executed_at TEXT
                 )
             """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS backtest_results (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    strategy_name TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    total_return REAL,
-                    sharpe_ratio REAL,
-                    max_drawdown REAL,
-                    win_rate REAL,
-                    total_trades INTEGER,
-                    params TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS analysis_cache (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    period TEXT NOT NULL,
-                    interval TEXT NOT NULL,
-                    data_json TEXT,
-                    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, period, interval)
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS portfolio (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    shares INTEGER NOT NULL,
-                    avg_cost REAL NOT NULL,
-                    purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    notes TEXT
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS predictions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    predicted_direction TEXT,
-                    confidence REAL,
-                    target_price REAL,
-                    stop_loss REAL,
-                    horizon_days INTEGER,
-                    features_json TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
             conn.commit()
             logger.info("Database initialized successfully")
 
-    def add_to_watchlist(self, symbol, target_price=None, stop_loss=None, notes=""):
+    def save_alert(self, alert: Dict[str, Any]) -> bool:
         try:
-            with self._get_connection() as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO watchlist (symbol, target_price, stop_loss, notes, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (symbol.upper(), target_price, stop_loss, notes, datetime.now().isoformat()))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error adding to watchlist: {e}")
-            return False
-
-    def get_watchlist(self):
-        try:
-            with self._get_connection() as conn:
-                df = pd.read_sql_query("SELECT * FROM watchlist ORDER BY added_at DESC", conn)
-                return df
-        except Exception as e:
-            logger.error(f"Error getting watchlist: {e}")
-            return pd.DataFrame()
-
-    def remove_from_watchlist(self, symbol):
-        try:
-            with self._get_connection() as conn:
-                conn.execute("DELETE FROM watchlist WHERE symbol = ?", (symbol.upper(),))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error removing from watchlist: {e}")
-            return False
-
-    def add_alert(self, symbol, alert_type, condition, price, message, severity="info"):
-        try:
-            with self._get_connection() as conn:
-                conn.execute("""
-                    INSERT INTO alerts (symbol, alert_type, condition, price, message, severity)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (symbol.upper(), alert_type, condition, price, message, severity))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error adding alert: {e}")
-            return False
-
-    def get_alerts(self, symbol=None, limit=50, acknowledged=None):
-        try:
-            with self._get_connection() as conn:
-                query = "SELECT * FROM alerts WHERE 1=1"
-                params = []
-                if symbol:
-                    query += " AND symbol = ?"
-                    params.append(symbol.upper())
-                if acknowledged is not None:
-                    query += " AND acknowledged = ?"
-                    params.append(int(acknowledged))
-                query += " ORDER BY triggered_at DESC LIMIT ?"
-                params.append(limit)
-                df = pd.read_sql_query(query, conn, params=params)
-                return df
-        except Exception as e:
-            logger.error(f"Error getting alerts: {e}")
-            return pd.DataFrame()
-
-    def acknowledge_alert(self, alert_id):
-        try:
-            with self._get_connection() as conn:
-                conn.execute("UPDATE alerts SET acknowledged = 1 WHERE id = ?", (alert_id,))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error acknowledging alert: {e}")
-            return False
-
-    def save_backtest(self, strategy_name, symbol, result):
-        try:
-            with self._get_connection() as conn:
-                conn.execute("""
-                    INSERT INTO backtest_results 
-                    (strategy_name, symbol, total_return, sharpe_ratio, max_drawdown, win_rate, total_trades, params)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO alerts 
+                    (id, symbol, alert_type, target_value, severity, created_at, triggered_at, is_active, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    strategy_name, symbol.upper(),
-                    result.get("total_return", 0),
-                    result.get("sharpe_ratio", 0),
-                    result.get("max_drawdown", 0),
-                    result.get("win_rate", 0),
-                    result.get("total_trades", 0),
-                    json.dumps(result.get("params", {}))
+                    alert.get("id"),
+                    alert.get("symbol"),
+                    alert.get("type", alert.get("alert_type")),
+                    alert.get("target", alert.get("target_value")),
+                    alert.get("severity", "MEDIUM"),
+                    alert.get("created", datetime.now().isoformat()),
+                    alert.get("triggered_at"),
+                    1 if alert.get("triggered", False) else 0,
+                    json.dumps(alert.get("metadata", {}))
                 ))
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"Error saving backtest: {e}")
+            logger.error(f"Error saving alert: {e}")
             return False
 
-    def get_backtests(self, symbol=None, limit=20):
+    def get_alerts(self, active_only: bool = True) -> List[Dict]:
         try:
-            with self._get_connection() as conn:
-                query = "SELECT * FROM backtest_results WHERE 1=1"
-                params = []
-                if symbol:
-                    query += " AND symbol = ?"
-                    params.append(symbol.upper())
-                query += " ORDER BY created_at DESC LIMIT ?"
-                params.append(limit)
-                df = pd.read_sql_query(query, conn, params=params)
-                return df
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                if active_only:
+                    cursor.execute("SELECT * FROM alerts WHERE is_active = 1 ORDER BY created_at DESC")
+                else:
+                    cursor.execute("SELECT * FROM alerts ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
         except Exception as e:
-            logger.error(f"Error getting backtests: {e}")
-            return pd.DataFrame()
+            logger.error(f"Error retrieving alerts: {e}")
+            return []
 
-    def save_analysis_cache(self, symbol, period, interval, data):
+    def delete_alert(self, alert_id: str) -> bool:
         try:
-            with self._get_connection() as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO analysis_cache (symbol, period, interval, data_json, computed_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (symbol.upper(), period, interval, json.dumps(data), datetime.now().isoformat()))
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deleting alert: {e}")
+            return False
+
+    def save_watchlist(self, name: str, symbols: List[str]) -> bool:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO watchlists (name, symbols, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (name, json.dumps(symbols), datetime.now().isoformat(), datetime.now().isoformat()))
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"Error saving analysis cache: {e}")
+            logger.error(f"Error saving watchlist: {e}")
             return False
 
-    def get_analysis_cache(self, symbol, period, interval):
+    def get_watchlist(self, name: str = "default") -> List[str]:
         try:
-            with self._get_connection() as conn:
-                cursor = conn.execute("""
-                    SELECT data_json, computed_at FROM analysis_cache
-                    WHERE symbol = ? AND period = ? AND interval = ?
-                """, (symbol.upper(), period, interval))
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT symbols FROM watchlists WHERE name = ?", (name,))
                 row = cursor.fetchone()
                 if row:
-                    computed_at = datetime.fromisoformat(row["computed_at"])
-                    if (datetime.now() - computed_at).seconds < app_config.CACHE_TTL_ANALYSIS:
-                        return json.loads(row["data_json"])
-                return None
+                    return json.loads(row[0])
+                return []
         except Exception as e:
-            logger.error(f"Error getting analysis cache: {e}")
-            return None
+            logger.error(f"Error retrieving watchlist: {e}")
+            return []
 
-    def save_prediction(self, symbol, prediction):
+    def save_preference(self, key: str, value: Any) -> bool:
         try:
-            with self._get_connection() as conn:
-                conn.execute("""
-                    INSERT INTO predictions (symbol, predicted_direction, confidence, target_price, stop_loss, horizon_days, features_json)
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO preferences (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                """, (key, json.dumps(value), datetime.now().isoformat()))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error saving preference: {e}")
+            return False
+
+    def get_preference(self, key: str, default: Any = None) -> Any:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM preferences WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+                return default
+        except Exception as e:
+            logger.error(f"Error retrieving preference: {e}")
+            return default
+
+    def save_trade(self, trade: Dict[str, Any]) -> bool:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO trades (symbol, action, quantity, price, total_value, strategy, executed_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    symbol.upper(), prediction.get("direction"),
-                    prediction.get("confidence"), prediction.get("target_price"),
-                    prediction.get("stop_loss"), prediction.get("horizon_days"),
-                    json.dumps(prediction.get("features", {}))
+                    trade.get("symbol"),
+                    trade.get("action"),
+                    trade.get("quantity"),
+                    trade.get("price"),
+                    trade.get("total_value"),
+                    trade.get("strategy"),
+                    trade.get("executed_at", datetime.now().isoformat())
                 ))
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"Error saving prediction: {e}")
+            logger.error(f"Error saving trade: {e}")
             return False
 
-    def get_predictions(self, symbol=None, limit=50):
+    def get_trade_history(self, symbol: Optional[str] = None) -> pd.DataFrame:
         try:
-            with self._get_connection() as conn:
-                query = "SELECT * FROM predictions WHERE 1=1"
-                params = []
+            with sqlite3.connect(self.db_path) as conn:
                 if symbol:
-                    query += " AND symbol = ?"
-                    params.append(symbol.upper())
-                query += " ORDER BY created_at DESC LIMIT ?"
-                params.append(limit)
-                df = pd.read_sql_query(query, conn, params=params)
+                    query = "SELECT * FROM trades WHERE symbol = ? ORDER BY executed_at DESC"
+                    df = pd.read_sql_query(query, conn, params=(symbol,))
+                else:
+                    query = "SELECT * FROM trades ORDER BY executed_at DESC"
+                    df = pd.read_sql_query(query, conn)
                 return df
         except Exception as e:
-            logger.error(f"Error getting predictions: {e}")
+            logger.error(f"Error retrieving trade history: {e}")
             return pd.DataFrame()
 
-    def get_stats(self):
+    def get_stats(self) -> Dict:
         try:
-            with self._get_connection() as conn:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
                 stats = {}
-                for table in ["watchlist", "alerts", "backtest_results", "analysis_cache", "predictions"]:
-                    cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
+                for table in ["alerts", "watchlists", "trades"]:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
                     stats[table] = cursor.fetchone()[0]
-
-                db_size = os.path.getsize(self.db_path)
-                stats["size_bytes"] = db_size
-                stats["size_mb"] = round(db_size / (1024 * 1024), 2)
                 return stats
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             return {}
-
-    def backup(self):
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = os.path.join(db_config.BACKUP_DIR, f"egx_db_backup_{timestamp}.db")
-            shutil.copy2(self.db_path, backup_path)
-
-            backups = sorted([
-                f for f in os.listdir(db_config.BACKUP_DIR)
-                if f.startswith("egx_db_backup_")
-            ])
-            while len(backups) > db_config.MAX_BACKUPS:
-                os.remove(os.path.join(db_config.BACKUP_DIR, backups.pop(0)))
-
-            logger.info(f"Database backup created: {backup_path}")
-            return backup_path
-        except Exception as e:
-            logger.error(f"Error creating backup: {e}")
-            return None
-
-    def vacuum(self):
-        try:
-            with self._get_connection() as conn:
-                conn.execute("VACUUM")
-                conn.commit()
-                logger.info("Database vacuumed successfully")
-                return True
-        except Exception as e:
-            logger.error(f"Error vacuuming database: {e}")
-            return False
-
-    def clear_old_data(self, days=90):
-        try:
-            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-            with self._get_connection() as conn:
-                conn.execute("DELETE FROM alerts WHERE triggered_at < ?", (cutoff,))
-                conn.execute("DELETE FROM predictions WHERE created_at < ?", (cutoff,))
-                conn.commit()
-                logger.info(f"Cleared data older than {days} days")
-                return True
-        except Exception as e:
-            logger.error(f"Error clearing old data: {e}")
-            return False
 
 local_storage = LocalStorage()

@@ -1,3 +1,1 @@
-"""
-EGX Pro Terminal - Data Package
-"""
+"""EGX Pro Terminal - Data Module"""
