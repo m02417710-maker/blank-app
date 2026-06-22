@@ -1,25 +1,18 @@
 [theme]
-base = "dark"
-primaryColor = "#4a9eff"
+primaryColor = "#1f6feb"
 backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1e1e1e"
-textColor = "#fafafa"
+secondaryBackgroundColor = "#161b22"
+textColor = "#e6edf3"
 font = "sans serif"
 
 [server]
 headless = true
-port = 8501
 enableCORS = false
 enableXsrfProtection = true
-maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
 
 [runner]
-fastReruns = true
+postScriptGC = true
 magicEnabled = false
-
-[client]
-showErrorDetails = true
-toolbarMode = "minimal"
