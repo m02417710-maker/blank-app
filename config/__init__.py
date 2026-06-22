@@ -1,3 +1,1 @@
-"""
-EGX Pro Terminal - Configuration Package
-"""
+"""EGX Pro Terminal - Config Module"""
