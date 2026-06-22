@@ -1,100 +1,99 @@
 """
-EGX Pro Terminal v27 - Advanced Formatters
-Professional data formatting for reports and displays
+EGX Pro Terminal v34 - Data Formatters
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
 
-class DataFormatter:
-    @staticmethod
-    def format_stock_table(df: pd.DataFrame, columns: List[str] = None) -> pd.DataFrame:
-        if df.empty:
-            return df
+def format_price(value: float, currency: str = "EGP") -> str:
+    """Format price with currency."""
+    return f"{value:,.2f} {currency}"
 
-        if columns:
-            df = df[columns]
+def format_percentage(value: float, decimals: int = 2) -> str:
+    """Format percentage with sign."""
+    sign = "+" if value >= 0 else ""
+    return f"{sign}{value:.{decimals}f}%"
 
-        formatted = df.copy()
+def format_volume(value: int) -> str:
+    """Format large numbers with K/M/B suffix."""
+    if value >= 1_000_000_000:
+        return f"{value/1_000_000_000:.2f}B"
+    elif value >= 1_000_000:
+        return f"{value/1_000_000:.2f}M"
+    elif value >= 1_000:
+        return f"{value/1_000:.1f}K"
+    return str(value)
 
-        for col in formatted.columns:
-            if 'price' in col.lower() or 'close' in col.lower() or 'open' in col.lower():
-                formatted[col] = formatted[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-            elif 'change_pct' in col.lower() or 'pct' in col.lower():
-                formatted[col] = formatted[col].apply(
-                    lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A"
-                )
-            elif 'volume' in col.lower():
-                formatted[col] = formatted[col].apply(
-                    lambda x: f"{x/1e6:.2f}M" if pd.notna(x) and x >= 1e6 else 
-                              f"{x/1e3:.2f}K" if pd.notna(x) and x >= 1e3 else 
-                              f"{x:.0f}" if pd.notna(x) else "N/A"
-                )
-            elif 'market_cap' in col.lower():
-                formatted[col] = formatted[col].apply(
-                    lambda x: f"{x/1e9:.2f}B" if pd.notna(x) and x >= 1e9 else 
-                              f"{x/1e6:.2f}M" if pd.notna(x) else "N/A"
-                )
+def format_market_cap(value: float) -> str:
+    """Format market cap in millions/billions."""
+    if value >= 1000:
+        return f"{value/1000:.2f}B EGP"
+    return f"{value:.0f}M EGP"
 
-        return formatted
+def format_time_ago(dt: datetime) -> str:
+    """Format datetime as time ago."""
+    diff = datetime.now() - dt
+    if diff.days > 365:
+        return f"{diff.days // 365}y ago"
+    if diff.days > 30:
+        return f"{diff.days // 30}mo ago"
+    if diff.days > 0:
+        return f"{diff.days}d ago"
+    hours = diff.seconds // 3600
+    if hours > 0:
+        return f"{hours}h ago"
+    minutes = (diff.seconds % 3600) // 60
+    return f"{minutes}m ago"
 
-    @staticmethod
-    def format_indicator_value(value: float, indicator_type: str = "default") -> str:
-        if pd.isna(value):
-            return "N/A"
+def format_number(value: float, decimals: int = 2) -> str:
+    """Format number with commas."""
+    return f"{value:,.{decimals}f}"
 
-        formats = {
-            "price": f"{value:.2f}",
-            "percentage": f"{value:.2f}%",
-            "ratio": f"{value:.3f}",
-            "index": f"{value:.1f}",
-            "volume": f"{value:,.0f}",
-            "default": f"{value:.2f}"
-        }
-        return formats.get(indicator_type, formats["default"])
+def colorize_change(value: float) -> str:
+    """Return color class for change value."""
+    if value > 0:
+        return "change-up"
+    elif value < 0:
+        return "change-down"
+    return "change-neutral"
 
-    @staticmethod
-    def color_code_value(value: float, threshold_positive: float = 0, 
-                         threshold_negative: float = 0) -> str:
-        if value > threshold_positive:
-            return f"<span style='color: #4caf50'>{value:+.2f}</span>"
-        elif value < threshold_negative:
-            return f"<span style='color: #f44336'>{value:+.2f}</span>"
-        else:
-            return f"<span style='color: #ff9800'>{value:+.2f}</span>"
+def format_signal(signal: str) -> str:
+    """Format trading signal with emoji."""
+    signals = {
+        "BUY": "🟢 BUY",
+        "SELL": "🔴 SELL",
+        "HOLD": "🟡 HOLD",
+        "STRONG_BUY": "🟢🟢 STRONG BUY",
+        "STRONG_SELL": "🔴🔴 STRONG SELL",
+        "NEUTRAL": "⚪ NEUTRAL",
+    }
+    return signals.get(signal, signal)
 
-    @staticmethod
-    def format_backtest_result(result: Dict) -> Dict[str, str]:
-        return {
-            "Total Return": f"{result.get('total_return_pct', 0):+.2f}%",
-            "Sharpe Ratio": f"{result.get('sharpe_ratio', 0):.3f}",
-            "Sortino Ratio": f"{result.get('sortino_ratio', 0):.3f}",
-            "Max Drawdown": f"{result.get('max_drawdown_pct', 0):.2f}%",
-            "Calmar Ratio": f"{result.get('calmar_ratio', 0):.3f}",
-            "Win Rate": f"{result.get('win_rate', 0):.1f}%",
-            "Profit Factor": f"{result.get('profit_factor', 0):.3f}",
-            "Total Trades": str(result.get('total_trades', 0)),
-            "Avg Win": f"{result.get('avg_win', 0):.2f}%",
-            "Avg Loss": f"{result.get('avg_loss', 0):.2f}%",
-            "VaR (95%)": f"{result.get('var_95', 0):.3f}%",
-            "CVaR (95%)": f"{result.get('cvar_95', 0):.3f}%"
-        }
+def format_indicator(value: float, indicator: str) -> str:
+    """Format technical indicator with context."""
+    if indicator == "rsi":
+        if value > 70:
+            return f"{value:.1f} (Overbought)"
+        elif value < 30:
+            return f"{value:.1f} (Oversold)"
+        return f"{value:.1f} (Neutral)"
+    elif indicator == "macd":
+        if value > 0:
+            return f"{value:.3f} (Bullish)"
+        return f"{value:.3f} (Bearish)"
+    return f"{value:.2f}"
 
-    @staticmethod
-    def format_prediction_result(prediction: Any) -> Dict[str, str]:
-        return {
-            "Direction": prediction.predicted_direction,
-            "Confidence": f"{prediction.confidence:.0%}",
-            "Target Price": f"{prediction.target_price:.2f} EGP",
-            "Stop Loss": f"{prediction.stop_loss:.2f} EGP",
-            "Expected Return": f"{prediction.expected_return:+.2f}%",
-            "Risk/Reward": f"1:{prediction.risk_reward_ratio:.1f}",
-            "Sharpe Estimate": f"{prediction.sharpe_estimate:.2f}",
-            "Prob Up": f"{prediction.probability_up:.1%}",
-            "Prob Down": f"{prediction.probability_down:.1%}",
-            "Prob Sideways": f"{prediction.probability_sideways:.1%}"
-        }
+def truncate_text(text: str, max_length: int = 100) -> str:
+    """Truncate text with ellipsis."""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length-3] + "..."
 
-formatter = DataFormatter()
+def format_date(dt: datetime, format_str: str = "%Y-%m-%d") -> str:
+    """Format datetime."""
+    return dt.strftime(format_str)
+
+def format_currency(value: float, currency: str = "EGP") -> str:
+    """Format currency value."""
+    return f"{currency} {value:,.2f}"
