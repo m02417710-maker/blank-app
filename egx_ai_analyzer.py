@@ -44,11 +44,14 @@ class AIAnalyzer:
     def is_available(self) -> bool:
         return self._client_ready and self.model is not None
 
-    def _safe_generate(self, prompt: str, fallback: str) -> str:
+    def _safe_generate(self, prompt: str, fallback: str, timeout: int = 15) -> str:
         if not self.is_available():
             return fallback
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(
+                prompt,
+                request_options={"timeout": timeout}
+            )
             return response.text
         except Exception as e:
             return f"⚠️ تعذّر الاتصال بـ Gemini API: {e}\n\n{fallback}"

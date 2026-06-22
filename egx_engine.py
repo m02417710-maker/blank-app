@@ -30,7 +30,8 @@ def safe_last(s: pd.Series, default=0.0) -> float:
     try:
         v = s.dropna()
         return float(v.iloc[-1]) if not v.empty else default
-    except: return default
+    except (IndexError, TypeError, ValueError):
+        return default
 
 def fmt_num(num, decimals: int = 2) -> str:
     try:
@@ -41,7 +42,8 @@ def fmt_num(num, decimals: int = 2) -> str:
         if abs(num) >= 1e6: return f"{num/1e6:.2f}M"
         if abs(num) >= 1e3: return f"{num/1e3:.1f}K"
         return f"{num:,.{decimals}f}"
-    except: return "N/A"
+    except (TypeError, ValueError, OverflowError):
+        return "N/A"
 
 def fmt_egp(num) -> str:
     return f"EGP {fmt_num(num)}"
@@ -187,7 +189,7 @@ class EGXDatabase:
         'HRTS': {'name':'هيرميس للخدمات السياحية','name_en':'Hermes Tourism','sector':'السياحة','yf':None,'base':8,'pe':13.5,'div_yield':0,'eps':0.59,'market_cap':6,'dividend':0,'div_date':None},
 
         # ── الزراعة ──────────────────────────────────────────────
-        'EFCO_A': {'name':'الدلتا للأسمدة','name_en':'Delta Fertilizers','sector':'الزراعة','yf':None,'base':35,'pe':10.0,'div_yield':3.5,'eps':3.5,'market_cap':22,'dividend':1.225,'div_date':'2024-04'},
+        'DLTA': {'name':'الدلتا للأسمدة','name_en':'Delta Fertilizers','sector':'الزراعة','yf':None,'base':35,'pe':10.0,'div_yield':3.5,'eps':3.5,'market_cap':22,'dividend':1.225,'div_date':'2024-04'},
         'SEED': {'name':'مصر لإنتاج البذور','name_en':'Egypt Seeds','sector':'الزراعة','yf':None,'base':8,'pe':9.0,'div_yield':2.0,'eps':0.89,'market_cap':6,'dividend':0.16,'div_date':'2024-05'},
         'AGRI': {'name':'الشركة المصرية للزراعة','name_en':'Egypt Agriculture','sector':'الزراعة','yf':None,'base':12,'pe':11.0,'div_yield':2.5,'eps':1.09,'market_cap':8,'dividend':0.3,'div_date':'2024-04'},
         'FERT': {'name':'مصر للأسمدة والصناعات','name_en':'Egypt Fertilizers','sector':'الزراعة','yf':None,'base':25,'pe':9.5,'div_yield':3.0,'eps':2.63,'market_cap':18,'dividend':0.75,'div_date':'2024-04'},
@@ -251,7 +253,8 @@ def get_stock_news(symbol: str) -> List[Dict]:
             if news:
                 return [{'title': n.get('title',''),'source': n.get('publisher',''),'time': n.get('providerPublishTime',0),
                          'url': n.get('link','#'),'summary': n.get('summary','')} for n in news[:5]]
-    except: pass
+    except Exception:
+        pass
 
     # أخبار محاكاة ذكية بناءً على بيانات الشركة
     sector = info.get('sector','')
@@ -294,7 +297,8 @@ def get_dividends_history(symbol: str) -> pd.DataFrame:
                 df.columns = ['التاريخ','التوزيع (EGP)']
                 df['التاريخ'] = pd.to_datetime(df['التاريخ']).dt.strftime('%Y-%m-%d')
                 return df.tail(8)
-    except: pass
+    except Exception:
+        pass
 
     # توزيعات محاكاة
     div = info.get('dividend', 0)
@@ -417,7 +421,8 @@ def fetch_real_data(symbol: str, days: int = 300) -> Optional[pd.DataFrame]:
         df.columns = ['open','high','low','close','volume']
         df.index = pd.to_datetime(df.index).tz_localize(None)
         return df.dropna().tail(days)
-    except: return None
+    except Exception:
+        return None
 
 # ═══════════════════════════════════════════════════════════════
 # المؤشرات الفنية
@@ -475,19 +480,13 @@ def calc_williams_r(h,l,c,n=14):
     hh=h.rolling(n,min_periods=1).max(); ll=l.rolling(n,min_periods=1).min()
     return -100*(hh-c)/(hh-ll).replace(0,np.nan)
 
-def calc_vwap_daily(h,l,c,v):
-    """✅ VWAP يومي — يُعاد من الصفر كل يوم"""
-    tp=(h+l+c)/3
-    df_tmp=pd.DataFrame({'tp':tp,'v':v,'date':tp.index.date})
-    def dv(g):
-        cum=( g['tp']*g['v']).cumsum()
-        return cum/g['v'].cumsum().replace(0,np.nan)
-    try:
-        res=df_tmp.groupby('date',group_keys=False).apply(dv)
-    except:
-        res=df_tmp.groupby('date',group_keys=False)[['tp','v']].apply(dv)
-    res.index=tp.index
-    return res
+def calc_vwap_daily(h, l, c, v):
+    """✅ VWAP يومي — يُعاد من الصفر كل يوم (بدون apply لتوافق pandas 2.x)"""
+    tp = (h + l + c) / 3
+    dates = pd.Series(tp.index.date, index=tp.index)
+    cum_tpv = (tp * v).groupby(dates).cumsum()
+    cum_v = v.groupby(dates).cumsum()
+    return cum_tpv / cum_v.replace(0, np.nan)
 
 def calc_supertrend(h,l,c,period=10,mult=3.0):
     """✅ Supertrend — numpy بدون FutureWarning"""
@@ -577,7 +576,7 @@ def load_and_compute(symbol: str, days: int = 300) -> Optional[pd.DataFrame]:
         df['vol_sma']=v.rolling(20,min_periods=1).mean()
         df['vol_ratio']=v/df['vol_sma'].replace(0,np.nan)
         df['volatility_20d']=c.pct_change().rolling(20,min_periods=1).std()*np.sqrt(252)
-        df['data_source']=source
+        df['data_source'] = pd.Series([source] * len(df), index=df.index)
         return df
     except Exception as e:
         logger.error(f"load_and_compute({symbol}): {e}")

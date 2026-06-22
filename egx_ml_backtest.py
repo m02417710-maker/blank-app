@@ -8,8 +8,8 @@ import warnings
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
-EGX_COMMISSION=0.00135; EGX_STAMP=0.001; EGX_CUSTODY=0.0003
-EGX_TOTAL_COST=EGX_COMMISSION+EGX_STAMP+EGX_CUSTODY
+EGX_COMMISSION=0.00100; EGX_STAMP=0.00050; EGX_CUSTODY=0.00035  # 18.5 bps إجمالاً (EGX الرسمية)
+EGX_TOTAL_COST=EGX_COMMISSION+EGX_STAMP+EGX_CUSTODY  # = 0.00185
 EGX_SLIPPAGE=0.002; MIN_TRADE_EGP=500
 
 class EGXMLPredictor:
@@ -199,16 +199,19 @@ def _run(df,strategy,cap=100_000):
                 tc=sh*cp*EGX_TOTAL_COST; capital-=sh*cp+tc
                 pos,ep,ed=sh,cp,df.index[i]
         elif sell and pos>0:
-            sp=_cost(price,'sell'); pr=pos*sp; tc=pr*EGX_TOTAL_COST
-            pnl=pr-tc-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
-            capital+=pr-tc
+            sp=_cost(price,'sell')  # يشمل العمولة والانزلاق بالفعل
+            pr=pos*sp
+            tc=pos*ep*EGX_TOTAL_COST  # تكلفة الدخول للمرجع فقط
+            pnl=pr-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
+            capital+=pr  # بدون خصم مزدوج
             trades.append(Trade(ed,df.index[i],ep,sp,pos,pos*ep,pnl,pct,tc,strategy))
             pos=0
         evs.append(capital+(pos*price if pos>0 else 0)); eds.append(df.index[i])
     if pos>0:
-        lp=float(c.iloc[-1]); sp=_cost(lp,'sell'); pr=pos*sp; tc=pr*EGX_TOTAL_COST
-        pnl=pr-tc-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
-        capital+=pr-tc
+        lp=float(c.iloc[-1]); sp=_cost(lp,'sell'); pr=pos*sp
+        tc=pos*ep*EGX_TOTAL_COST
+        pnl=pr-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
+        capital+=pr
         trades.append(Trade(ed,df.index[-1],ep,sp,pos,pos*ep,pnl,pct,tc,strategy))
     equity=pd.Series(evs,index=eds[:len(evs)])
     m=_metrics(equity,trades)

@@ -190,6 +190,16 @@ def init_state():
         if k not in st.session_state: st.session_state[k]=v
 init_state()
 
+
+# ═══════════════════════════════════════════════════════════════
+# دوال التنقل — on_click callbacks (تمنع React DOM race condition)
+# ═══════════════════════════════════════════════════════════════
+def go_to(page: str):
+    st.session_state['page'] = page
+
+def clear_alerts():
+    st.session_state['alerts'] = []
+
 @st.cache_resource(show_spinner=False)
 def get_ai_analyzer():
     return AIAnalyzer()
@@ -217,7 +227,8 @@ def _color_backtest(df_style):
                 elif v < 0: return 'color:#ef4444;font-weight:700'
             except: pass
         return ''
-    return df_style.map(_cell_color)  # ✅ map بدلاً من applymap
+    numeric_cols = ['العائد الكلي','العائد السنوي','نسبة الربح','Kelly%','Max DD']
+    return df_style.map(_cell_color, subset=numeric_cols)
 
 # ═══════════════════════════════════════════════════════════════
 # الرسم البياني الرئيسي
@@ -322,8 +333,7 @@ def page_home():
                  ("🧪 باكتست","backtest"),("🤖 ذكاء اصطناعي","ml"),("💼 محفظة","portfolio")]
     for col,(lbl,pg) in zip(cols_nav,nav_items):
         with col:
-            if st.button(lbl, key=f"nav_quick_{pg}"):
-                st.session_state['page']=pg  # FIXED: removed st.rerun() to prevent React DOM race condition
+            st.button(lbl, key=f"nav_quick_{pg}", on_click=go_to, args=(pg,))
 
     st.markdown("---")
 
@@ -924,16 +934,17 @@ def page_alerts():
                   ('Supertrend شراء' in al['type'] and asd==1) or
                   ('Supertrend بيع' in al['type'] and asd==-1))
             icon='🔔' if trig else '🔕'; stat='✅ محقق!' if trig else '⏳ منتظر'
-            bg='background:#052e16;border-color:#10b981;color:#6ee7b7' if trig else 'background:#1a1f2e;border-color:#3d4a63;color:#94a3b8'
+            bg_style=('background:#052e16;border:1px solid #10b981;border-right:4px solid #10b981;color:#6ee7b7'
+                       if trig else
+                       'background:#1a1f2e;border:1px solid #3d4a63;border-right:4px solid #3d4a63;color:#94a3b8')
             st.markdown(f"""
-            <div style="border-radius:10px;padding:14px 18px;margin:6px 0;border-right:4px solid;
-                        border:1px solid;{bg};font-size:14px">
+            <div style="border-radius:10px;padding:14px 18px;margin:6px 0;{bg_style};font-size:14px">
                 {icon} <b>{al['sym']}</b> — {al['type']} {al.get('threshold',''):g}
                 | الحالي: <b>{ap:.2f}</b> | <b>{stat}</b>
                 {f" | {al['note']}" if al.get('note') else ''}
             </div>""", unsafe_allow_html=True)
-        if st.button("🗑️ مسح جميع التنبيهات"):
-            st.session_state['alerts']=[]  # FIXED: removed st.rerun() to prevent React DOM race condition
+        if st.button("🗑️ مسح جميع التنبيهات", on_click=clear_alerts):
+            pass
 
 def page_compare():
     st.markdown('<div class="page-header"><div class="page-title">⚖️ مقارنة الأسهم</div><div class="page-sub">قارن أداء حتى 5 أسهم معاً</div></div>', unsafe_allow_html=True)
@@ -1142,10 +1153,10 @@ def render_sidebar():
         cur=st.session_state.get('page','home')
         for key,(label,_) in PAGES.items():
             is_active=key==cur
-            if st.button(label, key=f"sb_{key}",
-                         help=label,
-                         type="primary" if is_active else "secondary"):
-                st.session_state['page']=key  # FIXED: removed st.rerun() to prevent React DOM race condition
+            st.button(label, key=f"sb_{key}",
+                      help=label,
+                      type="primary" if is_active else "secondary",
+                      on_click=go_to, args=(key,))
         st.markdown("---")
         n_real=len(EGXDatabase.EGX30); n_total=len(EGXDatabase.STOCKS)
         wl_n=len(st.session_state['watchlist']); alerts_n=len(st.session_state['alerts'])
