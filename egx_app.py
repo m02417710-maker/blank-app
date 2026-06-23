@@ -1,7 +1,9 @@
 """
-EGX Pro Ultimate v31 — واجهة احترافية كاملة
+EGX Pro Ultimate v32 — واجهة احترافية كاملة
 ✅ أزرار واضحة القراءة  ✅ تنسيق محسّن  ✅ أخبار وتوزيعات وتوقعات
 ✅ 200+ شركة  ✅ جميع الأخطاء مصحّحة
+✅ Cache للباكتست  ✅ MFI+Keltner في المخططات  ✅ Kelly من الباكتست
+✅ تنسيق alert threshold آمن  ✅ شارة محاكاة إحصائية
 """
 import streamlit as st
 import pandas as pd
@@ -17,7 +19,8 @@ from egx_engine import (
     EGXDatabase, load_and_compute, detect_patterns,
     get_composite_signal, get_support_resistance, get_fibonacci_levels,
     safe_last, fmt_num, fmt_egp, calc_supertrend, calc_atr,
-    get_stock_news, get_dividends_history, get_price_targets
+    get_stock_news, get_dividends_history, get_price_targets,
+    calc_mfi, calc_keltner
 )
 from egx_ml_backtest import (
     EGXMLPredictor, PortfolioManager,
@@ -26,7 +29,7 @@ from egx_ml_backtest import (
 )
 from egx_ai_analyzer import AIAnalyzer
 
-st.set_page_config(page_title="EGX Pro v31", page_icon="📈", layout="wide",
+st.set_page_config(page_title="EGX Pro v32", page_icon="📈", layout="wide",
                    initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════
@@ -184,6 +187,15 @@ div[data-testid="stMetricValue"] { font-size: 22px !important; font-weight: 700 
 def cached_load(symbol: str, days: int = 300):
     return load_and_compute(symbol, days)
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_backtest(symbol: str, capital: float, strategies: tuple, days: int = 500):
+    """✅ باكتست مُخزَّن في cache — يُعيد الحساب فقط عند تغيير المدخلات"""
+    df = load_and_compute(symbol, days)
+    if df is None:
+        return [], None
+    results = run_all_backtests(df, capital, list(strategies))
+    return results, df
+
 def init_state():
     for k,v in {'watchlist':['COMI','TMGH','ETEL','FWRY','SWDY','ECIG','SKPC'],
                 'alerts':[],'capital':100_000.0,'page':'home'}.items():
@@ -234,11 +246,13 @@ def _color_backtest(df_style):
 # الرسم البياني الرئيسي
 # ═══════════════════════════════════════════════════════════════
 def plot_main(df, symbol, indicators):
-    extra = sum(x in indicators for x in ['RSI','MACD','Volume'])
+    # ✅ إصلاح v32: MFI يحتاج subplot منفصل مثل RSI وMACD
+    sub_inds = [x for x in ['RSI','MACD','MFI','Volume'] if x in indicators]
+    extra = len(sub_inds)
     rows = 1 + extra
     rh = [0.55] + [0.15]*extra
     specs = [[{"secondary_y":True}]] + [[{}]]*extra
-    subtitles = [f"سعر {symbol}"] + [x for x in ['RSI','MACD','Volume'] if x in indicators]
+    subtitles = [f"سعر {symbol}"] + sub_inds
     fig = make_subplots(rows=rows,cols=1,shared_xaxes=True,
                         row_heights=rh,specs=specs,
                         subplot_titles=subtitles,vertical_spacing=0.03)
@@ -290,6 +304,16 @@ def plot_main(df, symbol, indicators):
         fig.add_trace(go.Scatter(x=df.index,y=df['psar'],name='Parabolic SAR',
             mode='markers',marker=dict(size=3,color='#a78bfa')),row=1,col=1)
 
+    # ✅ مُضاف v32: Keltner Channels
+    if 'Keltner' in indicators and 'kc_upper' in df.columns:
+        fig.add_trace(go.Scatter(x=df.index,y=df['kc_upper'],name='KC Upper',
+            line=dict(color='#06b6d4',dash='dot',width=1),opacity=0.7),row=1,col=1)
+        fig.add_trace(go.Scatter(x=df.index,y=df['kc_lower'],name='KC Lower',
+            line=dict(color='#06b6d4',dash='dot',width=1),opacity=0.7,
+            fill='tonexty',fillcolor='rgba(6,182,212,0.06)'),row=1,col=1)
+        fig.add_trace(go.Scatter(x=df.index,y=df['kc_mid'],name='KC Mid',
+            line=dict(color='#06b6d4',width=1.2),opacity=0.8),row=1,col=1)
+
     cr=2
     if 'RSI' in indicators and 'rsi' in df.columns:
         fig.add_trace(go.Scatter(x=df.index,y=df['rsi'],name='RSI',
@@ -306,6 +330,14 @@ def plot_main(df, symbol, indicators):
         clrs_hist=['#10b981' if v>=0 else '#ef4444' for v in df['macd_hist'].fillna(0)]
         fig.add_trace(go.Bar(x=df.index,y=df['macd_hist'],name='Hist',
             marker_color=clrs_hist,opacity=0.7),row=cr,col=1); cr+=1
+
+    # ✅ مُضاف v32: MFI subplot
+    if 'MFI' in indicators and 'mfi' in df.columns:
+        fig.add_trace(go.Scatter(x=df.index,y=df['mfi'],name='MFI',
+            line=dict(color='#a78bfa',width=1.5)),row=cr,col=1)
+        for lvl,c_ in [(80,'#ef4444'),(20,'#10b981'),(50,'#64748b')]:
+            fig.add_hline(y=lvl,line_dash='dash',line_color=c_,opacity=0.5,row=cr,col=1)
+        fig.update_yaxes(range=[0,100],row=cr,col=1); cr+=1
 
     if 'Volume' in indicators and 'volume' in df.columns:
         vclrs=['#10b981' if c_>=o_ else '#ef4444' for c_,o_ in zip(df['close'],df['open'])]
@@ -418,7 +450,7 @@ def page_analysis():
             <div style="color:#64748b;font-size:13px;margin-top:4px">
                 {sym} &nbsp;·&nbsp; {info.get('sector','')} &nbsp;·&nbsp;
                 <span class="{'badge-real' if src=='real' else 'badge-sim'}">
-                    {'🟢 بيانات حقيقية' if src=='real' else '🟡 محاكاة GARCH'}</span>
+                    {'🟢 بيانات حقيقية' if src=='real' else '🟡 محاكاة إحصائية'}</span>
             </div>
         </div>
         <div style="text-align:left">
@@ -448,7 +480,8 @@ def page_analysis():
     tabs=st.tabs(["📈 الرسم البياني","🎯 الإشارات","🕯️ الشموع","📐 دعم ومقاومة","📰 الأخبار","💰 التوزيعات","🎯 التوقعات"])
 
     with tabs[0]:
-        ind_opts=['EMA','Bollinger','VWAP','Supertrend','Ichimoku','PSAR','RSI','MACD','Volume']
+        ind_opts=['EMA','Bollinger','VWAP','Supertrend','Ichimoku','PSAR',
+                  'RSI','MACD','Volume','MFI','Keltner']
         show_ind=st.multiselect("المؤشرات المعروضة",ind_opts,
                                 default=['EMA','Supertrend','RSI','MACD','Volume'],
                                 key=f"ind_{sym}")
@@ -645,9 +678,9 @@ def page_backtest():
 
         if st.button("🚀 تشغيل الباكتست الآن", type="primary"):
             with st.spinner("جاري تشغيل الاختبار التاريخي..."):
-                df=cached_load(sym,500)
-                if df is None: st.error("لا بيانات"); return
-                results=run_all_backtests(df,capital,strat_sel)
+                # ✅ إصلاح: strategies كـ tuple للـ cache hashing
+                results, df = cached_backtest(sym, capital, tuple(sorted(strat_sel)))
+                if not results or df is None: st.error("لا بيانات كافية"); return
                 summary=backtest_summary_df(results)
             st.success(f"✅ اكتمل على {len(df)} يوم | {len(results)} استراتيجية")
             st.markdown("### 📊 مقارنة الاستراتيجيات")
@@ -771,8 +804,26 @@ def page_portfolio():
     price=float(df['close'].iloc[-1]); atr_v=safe_last(df['atr'])
     info=EGXDatabase.STOCKS.get(sym,{})
     pm=PortfolioManager(st.session_state['capital'])
-    pos=pm.calc_position_size(price,0.55,0.04,0.02,max_risk)
+
+    # ✅ إصلاح v32: استخراج Kelly من الباكتست الفعلي بدلاً من قيم ثابتة
+    kelly_source = "قيم افتراضية"
+    wr_real, aw_real, al_real = 0.55, 0.04, 0.02
+    try:
+        bt_results, _ = cached_backtest(sym, st.session_state['capital'],
+                                         tuple(['Multi-Signal','Supertrend']), days=300)
+        if bt_results:
+            best_bt = max(bt_results, key=lambda r: r.win_rate if r.total_trades > 3 else 0)
+            if best_bt.total_trades > 3:
+                wr_real  = best_bt.win_rate
+                aw_real  = best_bt.avg_win
+                al_real  = best_bt.avg_loss if best_bt.avg_loss > 0 else 0.02
+                kelly_source = f"باكتست {best_bt.strategy}"
+    except Exception:
+        pass
+
+    pos=pm.calc_position_size(price, wr_real, aw_real, al_real, max_risk)
     sl=pm.calc_stop_loss(price,atr_v)
+    st.caption(f"📊 مصدر Kelly: {kelly_source} | Win Rate: {wr_real*100:.1f}% | Avg Win: {aw_real*100:.1f}% | Avg Loss: {al_real*100:.1f}%")
 
     st.markdown(f"### 📊 {info.get('name',sym)} — {price:.2f} EGP")
     c1,c2,c3,c4=st.columns(4)
@@ -937,9 +988,14 @@ def page_alerts():
             bg_style=('background:#052e16;border:1px solid #10b981;border-right:4px solid #10b981;color:#6ee7b7'
                        if trig else
                        'background:#1a1f2e;border:1px solid #3d4a63;border-right:4px solid #3d4a63;color:#94a3b8')
+            # ✅ إصلاح: تنسيق آمن للـ threshold تجنباً لـ ValueError
+            try:
+                thresh_display = f"{float(al.get('threshold', 0)):g}"
+            except (TypeError, ValueError):
+                thresh_display = str(al.get('threshold', ''))
             st.markdown(f"""
             <div style="border-radius:10px;padding:14px 18px;margin:6px 0;{bg_style};font-size:14px">
-                {icon} <b>{al['sym']}</b> — {al['type']} {al.get('threshold',''):g}
+                {icon} <b>{al['sym']}</b> — {al['type']} {thresh_display}
                 | الحالي: <b>{ap:.2f}</b> | <b>{stat}</b>
                 {f" | {al['note']}" if al.get('note') else ''}
             </div>""", unsafe_allow_html=True)
@@ -1102,17 +1158,22 @@ def page_about():
     st.markdown('<div class="page-header"><div class="page-title">ℹ️ عن EGX Pro v31</div><div class="page-sub">منصة التحليل الفني الاحترافية لبورصة الأوراق المالية المصرية</div></div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="background:#1a1f2e;border-radius:14px;padding:28px;line-height:2;border:1px solid #3d4a63">
-    <h3 style="color:#f59e0b;margin-top:0">🚀 ما الجديد في v31</h3>
+    <h3 style="color:#f59e0b;margin-top:0">🚀 ما الجديد في v32 (أحدث)</h3>
     <ul style="color:#e2e8f0">
-      <li>✅ <b>VWAP يومي صحيح</b> — يُعاد من الصفر كل يوم (v29 كان خاطئاً)</li>
-      <li>✅ <b>Supertrend بـ NumPy</b> — سريع بدون FutureWarning</li>
-      <li>✅ <b>ML Walk-Forward</b> بدون Data Leakage + إصلاح class imbalance</li>
-      <li>✅ <b>.map() بدلاً من .applymap()</b> — توافق مع pandas 2.1+</li>
-      <li>✅ <b>أزرار واضحة القراءة</b> — CSS محسّن بخط Cairo وأحجام مناسبة</li>
-      <li>✅ <b>أخبار السهم</b> — حقيقية من Yahoo Finance أو محاكاة ذكية</li>
-      <li>✅ <b>التوزيعات النقدية</b> — سجل كامل + عائد التوزيعات</li>
-      <li>✅ <b>توقعات الأسعار</b> — 3 سيناريوهات + قيمة عادلة + توصية</li>
-      <li>✅ <b>200+ شركة</b> بقيانات: EPS, P/E, توزيعات, مارکت کاب</li>
+      <li>🔴 <b>إصلاح حرج: خصم عمولة مزدوج</b> في الباكتست كان يُشوّه النتائج</li>
+      <li>🔴 <b>إصلاح Gemini AI</b> — اسم الموديل الخاطئ كان يمنع عمل الذكاء الاصطناعي</li>
+      <li>🟠 <b>إضافة MFI</b> (Money Flow Index) كمؤشر حقيقي في الرسم البياني</li>
+      <li>🟠 <b>إضافة Keltner Channels</b> — قنوات كيلتنر مع تظليل بصري</li>
+      <li>🟡 <b>Kelly Criterion من الباكتست</b> — بدلاً من قيم ثابتة وهمية</li>
+      <li>🟡 <b>Cache للباكتست</b> — لا إعادة حساب غير ضرورية عند تكرار الطلب</li>
+      <li>🟡 <b>تنسيق آمن لـ alert threshold</b> — لا يرمي ValueError</li>
+      <li>🟢 <b>تسمية المحاكاة محسّنة</b> — "محاكاة إحصائية" بدلاً من GARCH</li>
+    </ul>
+    <hr style="border-color:#3d4a63">
+    <h4 style="color:#64748b">v31 (السابق)</h4>
+    <ul style="color:#64748b;font-size:13px">
+      <li>VWAP يومي صحيح · Supertrend بـ NumPy · ML Walk-Forward بدون Data Leakage</li>
+      <li>أزرار Cairo · أخبار · توزيعات · توقعات أسعار · 200+ شركة</li>
     </ul>
     <hr style="border-color:#3d4a63">
     <p style="color:#64748b;font-size:13px">
@@ -1138,7 +1199,7 @@ PAGES = {
     'alerts':    ("🔔 التنبيهات",     page_alerts),
     'fibonacci': ("🌀 فيبوناتشي",     page_fibonacci),
     'compare':   ("⚖️ مقارنة الأسهم", page_compare),
-    'about':     ("ℹ️ عن التطبيق",    page_about),
+    'about':     ("ℹ️ عن v32",        page_about),
 }
 
 def render_sidebar():
@@ -1147,7 +1208,7 @@ def render_sidebar():
         <div style="text-align:center;padding:20px 0 16px">
             <div style="font-size:42px">📈</div>
             <div style="font-size:20px;font-weight:800;color:#f59e0b;margin:4px 0">EGX Pro</div>
-            <div style="font-size:12px;color:#475569;letter-spacing:2px">ULTIMATE v31</div>
+            <div style="font-size:12px;color:#475569;letter-spacing:2px">ULTIMATE v32</div>
         </div>""", unsafe_allow_html=True)
         st.markdown("---")
         cur=st.session_state.get('page','home')

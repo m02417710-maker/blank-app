@@ -1,8 +1,10 @@
 """
-EGX Pro v31 — وحدة Gemini AI (اختيارية)
+EGX Pro v32 — وحدة Gemini AI (اختيارية)
 ✅ تعمل بدون مفتاح API — تُخفي نفسها تلقائياً إذا لم يتوفر مفتاح
 ✅ شرح المؤشرات الفنية بالعربية
 ✅ توليد استراتيجيات استثمار مخصصة
+✅ إصلاح: اسم الموديل الصحيح gemini-1.5-flash
+✅ إصلاح: bare except → except Exception
 """
 
 from typing import Optional
@@ -24,11 +26,14 @@ class AIAnalyzer:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-2.0-flash')
+                # ✅ إصلاح: الاسم الصحيح للموديل (gemini-2.0-flash كان يُسبب 404)
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
                 self._client_ready = True
             except ImportError:
                 self._client_ready = False
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Gemini init failed: {e}")
                 self._client_ready = False
 
     def _load_key_from_secrets(self) -> Optional[str]:
@@ -38,23 +43,27 @@ class AIAnalyzer:
             if 'GEMINI_API_KEY' in st.secrets:
                 return st.secrets['GEMINI_API_KEY']
         except Exception:
-            pass
+            pass  # st.secrets غير متاح خارج بيئة Streamlit
         return os.environ.get('GEMINI_API_KEY')
 
     def is_available(self) -> bool:
         return self._client_ready and self.model is not None
 
-    def _safe_generate(self, prompt: str, fallback: str, timeout: int = 15) -> str:
+    def _safe_generate(self, prompt: str, fallback: str, timeout: int = 20) -> str:
         if not self.is_available():
             return fallback
         try:
             response = self.model.generate_content(
                 prompt,
+                generation_config={"max_output_tokens": 1024},
                 request_options={"timeout": timeout}
             )
-            return response.text
+            text = response.text.strip()
+            return text if text else fallback
         except Exception as e:
-            return f"⚠️ تعذّر الاتصال بـ Gemini API: {e}\n\n{fallback}"
+            import logging
+            logging.getLogger(__name__).warning(f"Gemini generate error: {e}")
+            return f"⚠️ تعذّر الاتصال بـ Gemini API: {e}\n\n---\n{fallback}"
 
     # ── شرح المؤشرات الفنية ──────────────────────────────────────
     INDICATOR_FALLBACKS = {

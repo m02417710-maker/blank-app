@@ -1,7 +1,8 @@
 """
-EGX Pro Ultimate v31 — Core Engine (مُصحَّح بالكامل)
+EGX Pro Ultimate v32 — Core Engine (مُصحَّح بالكامل)
 ✅ VWAP يومي صحيح  ✅ Supertrend numpy (بدون FutureWarning)
 ✅ 200+ شركة مصرية  ✅ أخبار وتوزيعات وتوقعات أسعار
+✅ MFI مُضاف  ✅ Keltner Channels مُضاف  ✅ bare except مُصحَّح
 """
 
 import pandas as pd
@@ -234,6 +235,11 @@ class EGXDatabase:
 
 EGXDatabase.build_indices()
 
+# ── تصنيف القطاعات بأسماء واضحة (بديل EGX70/EGX100 العشوائي) ──
+# EGX30  = أكبر 30 سهم بالقيمة السوقية (مُعرَّف يدوياً)
+# EGX70  = أسهم سعرها الأساسي > 10 جنيه (تصنيف داخلي مساعد — ليس المؤشر الرسمي)
+# EGX100 = باقي الأسهم (تصنيف داخلي)
+
 # ═══════════════════════════════════════════════════════════════
 # الأخبار والتوزيعات
 # ═══════════════════════════════════════════════════════════════
@@ -253,8 +259,8 @@ def get_stock_news(symbol: str) -> List[Dict]:
             if news:
                 return [{'title': n.get('title',''),'source': n.get('publisher',''),'time': n.get('providerPublishTime',0),
                          'url': n.get('link','#'),'summary': n.get('summary','')} for n in news[:5]]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"get_stock_news({symbol}) yfinance error: {e}")
 
     # أخبار محاكاة ذكية بناءً على بيانات الشركة
     sector = info.get('sector','')
@@ -297,8 +303,8 @@ def get_dividends_history(symbol: str) -> pd.DataFrame:
                 df.columns = ['التاريخ','التوزيع (EGP)']
                 df['التاريخ'] = pd.to_datetime(df['التاريخ']).dt.strftime('%Y-%m-%d')
                 return df.tail(8)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"get_dividends_history({symbol}) yfinance error: {e}")
 
     # توزيعات محاكاة
     div = info.get('dividend', 0)
@@ -421,7 +427,8 @@ def fetch_real_data(symbol: str, days: int = 300) -> Optional[pd.DataFrame]:
         df.columns = ['open','high','low','close','volume']
         df.index = pd.to_datetime(df.index).tz_localize(None)
         return df.dropna().tail(days)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"fetch_real_data({symbol}): {e}")
         return None
 
 # ═══════════════════════════════════════════════════════════════
@@ -532,6 +539,23 @@ def calc_ichimoku(h,l,c,t=9,k=26,s=52):
     sa=((tk+kj)/2).shift(k); sb=((h.rolling(s,min_periods=1).max()+l.rolling(s,min_periods=1).min())/2).shift(k)
     return tk, kj, sa, sb, c.shift(-k)
 
+def calc_mfi(h, l, c, v, n=14) -> pd.Series:
+    """Money Flow Index — مؤشر تدفق الأموال"""
+    tp = (h + l + c) / 3
+    mf = tp * v
+    pos_mf = mf.where(tp > tp.shift(1), 0.0).rolling(n, min_periods=1).sum()
+    neg_mf = mf.where(tp <= tp.shift(1), 0.0).rolling(n, min_periods=1).sum()
+    mfi = 100 - (100 / (1 + pos_mf / neg_mf.replace(0, np.nan)))
+    return mfi.fillna(50)
+
+def calc_keltner(h, l, c, ema_period=20, atr_period=10, mult=2.0):
+    """Keltner Channels — قنوات كيلتنر"""
+    mid = calc_ema(c, ema_period)
+    kc_atr = calc_atr(h, l, c, atr_period)
+    upper = mid + mult * kc_atr
+    lower = mid - mult * kc_atr
+    return upper, mid, lower
+
 def get_support_resistance(df, window=20):
     r=df.tail(60)
     if r.empty: return 0.0,0.0
@@ -576,6 +600,9 @@ def load_and_compute(symbol: str, days: int = 300) -> Optional[pd.DataFrame]:
         df['vol_sma']=v.rolling(20,min_periods=1).mean()
         df['vol_ratio']=v/df['vol_sma'].replace(0,np.nan)
         df['volatility_20d']=c.pct_change().rolling(20,min_periods=1).std()*np.sqrt(252)
+        # ✅ مؤشرات مُضافة في v32
+        df['mfi'] = calc_mfi(h, l, c, v)
+        df['kc_upper'], df['kc_mid'], df['kc_lower'] = calc_keltner(h, l, c)
         df['data_source'] = pd.Series([source] * len(df), index=df.index)
         return df
     except Exception as e:

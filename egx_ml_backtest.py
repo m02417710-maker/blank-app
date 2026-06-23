@@ -1,4 +1,9 @@
-"""EGX Pro v31 — ML + Backtest Engine (مُصحَّح)"""
+"""EGX Pro v32 — ML + Backtest Engine (مُصحَّح بالكامل)
+✅ إصلاح خصم العمولة المزدوج عند الشراء
+✅ إصلاح PnL الصحيح (يطرح تكلفة الدخول والخروج)
+✅ bare except → except Exception
+✅ تحقق من monthly_amount في DCA
+"""
 import pandas as pd
 import numpy as np
 import logging
@@ -97,7 +102,9 @@ class EGXMLPredictor:
             elif p<=0.30: return "بيع قوي (ML)",p,"🔴"
             elif p<=0.45: return "ميل للبيع (ML)",p,"🟥"
             else: return "محايد (ML)",p,"⚪"
-        except: return "خطأ",0.0,"⚪"
+        except Exception as e:
+            logger.warning(f"EGXMLPredictor.predict error: {e}")
+            return "خطأ",0.0,"⚪"
 
     def get_feature_importance(self):
         if not self.is_trained or not hasattr(self.model,'feature_importances_'): return pd.DataFrame()
@@ -194,25 +201,32 @@ def _run(df,strategy,cap=100_000):
             else: sc-=1
             buy=sc>=3; sell=sc<=-3
         if buy and pos==0 and capital>MIN_TRADE_EGP:
-            cp=_cost(price,'buy'); sh=int(capital*0.95/cp)
+            # ✅ إصلاح: _cost() تُضيف العمولة+الانزلاق بالفعل — لا خصم إضافي
+            cp=_cost(price,'buy')
+            sh=int(capital*0.95/cp)
             if sh>0:
-                tc=sh*cp*EGX_TOTAL_COST; capital-=sh*cp+tc
+                entry_cost=sh*cp          # التكلفة الإجمالية شاملة العمولة
+                capital-=entry_cost
                 pos,ep,ed=sh,cp,df.index[i]
         elif sell and pos>0:
-            sp=_cost(price,'sell')  # يشمل العمولة والانزلاق بالفعل
-            pr=pos*sp
-            tc=pos*ep*EGX_TOTAL_COST  # تكلفة الدخول للمرجع فقط
-            pnl=pr-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
-            capital+=pr  # بدون خصم مزدوج
-            trades.append(Trade(ed,df.index[i],ep,sp,pos,pos*ep,pnl,pct,tc,strategy))
+            sp=_cost(price,'sell')        # يشمل العمولة والانزلاق
+            pr=pos*sp                     # المبلغ المستلم صافياً
+            entry_total=pos*ep            # ما دُفع عند الشراء (شامل العمولة)
+            # ✅ إصلاح: PnL الحقيقي = المستلم − ما دُفع (كلاهما يشمل التكاليف)
+            pnl=pr-entry_total
+            pct=pnl/entry_total if entry_total>0 else 0
+            tc=entry_total*(EGX_TOTAL_COST+EGX_SLIPPAGE)*2  # تكلفة كلا الاتجاهين للعرض
+            capital+=pr
+            trades.append(Trade(ed,df.index[i],ep,sp,pos,entry_total,pnl,pct,tc,strategy))
             pos=0
         evs.append(capital+(pos*price if pos>0 else 0)); eds.append(df.index[i])
     if pos>0:
         lp=float(c.iloc[-1]); sp=_cost(lp,'sell'); pr=pos*sp
-        tc=pos*ep*EGX_TOTAL_COST
-        pnl=pr-pos*ep; pct=pnl/(pos*ep) if ep>0 else 0
+        entry_total=pos*ep
+        pnl=pr-entry_total; pct=pnl/entry_total if entry_total>0 else 0
+        tc=entry_total*(EGX_TOTAL_COST+EGX_SLIPPAGE)*2
         capital+=pr
-        trades.append(Trade(ed,df.index[-1],ep,sp,pos,pos*ep,pnl,pct,tc,strategy))
+        trades.append(Trade(ed,df.index[-1],ep,sp,pos,entry_total,pnl,pct,tc,strategy))
     equity=pd.Series(evs,index=eds[:len(evs)])
     m=_metrics(equity,trades)
     res.trades=trades; res.equity_curve=equity; res.total_trades=len(trades)
@@ -260,6 +274,11 @@ def dca_simulation(df: pd.DataFrame, monthly_amount: float, months: int) -> Dict
     """
     if df is None or len(df) < 30:
         return {'error': 'بيانات غير كافية لمحاكاة DCA'}
+    # ✅ إصلاح: التحقق من صحة المدخلات
+    if monthly_amount <= 0:
+        return {'error': 'المبلغ الشهري يجب أن يكون أكبر من الصفر'}
+    if months <= 0:
+        return {'error': 'عدد الشهور يجب أن يكون أكبر من الصفر'}
 
     c = df['close']
     step = max(int(len(c) / max(months, 1)), 1)
