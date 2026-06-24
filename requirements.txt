@@ -1,8 +1,25 @@
+# EGX Pro Terminal v34 - Requirements
+# Core
 streamlit>=1.32.0
 pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.18.0
+
+# Finance
 yfinance>=0.2.36
+
+# ML/AI
 scikit-learn>=1.4.0
-google-generativeai>=0.8.0
 scipy>=1.10.0
+
+# AI APIs
+google-generativeai>=0.8.0
+
+# Database (built-in Python, no install needed: sqlite3, json, os)
+
+# Testing
+pytest>=7.0.0
+
+# Optional (for production)
+# arch>=6.0.0  # Real GARCH models
+# ta>=0.11.0   # Additional technical indicators
