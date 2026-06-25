@@ -1,0 +1,16 @@
+# بناء الصورة
+docker build -t egx-pro-terminal .
+
+# تشغيل عادي
+docker run -p 8501:8501 egx-pro-terminal
+
+# مع Gemini AI
+docker run -p 8501:8501 -e GEMINI_API_KEY=AIza... egx-pro-terminal
+
+# وضع التطوير (مع volume mount)
+docker run -p 8501:8501 -v $(pwd):/app egx-pro-terminal
+
+# مع ملف secrets
+docker run -p 8501:8501 \
+  -v $(pwd)/.streamlit/secrets.toml:/app/.streamlit/secrets.toml \
+  egx-pro-terminal
