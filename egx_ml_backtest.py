@@ -235,6 +235,9 @@ def _run(df,strategy,cap=100_000):
         setattr(res,k,m.get(k,0))
     return res
 
+__all__ = ['ALL_STRATEGIES', 'run_all_backtests', 'backtest_summary_df',
+           'EGXMLPredictor', 'PortfolioManager', 'dca_simulation']
+
 ALL_STRATEGIES=['EMA Cross','RSI Reversal','MACD Cross','Bollinger Breakout',
                 'Supertrend','VWAP + RSI','Parabolic SAR','Ichimoku','ADX Trend','Multi-Signal']
 

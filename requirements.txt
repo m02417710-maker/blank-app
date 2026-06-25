@@ -1,25 +1,27 @@
-# EGX Pro Terminal v34 - Requirements
-# Core
+# EGX Pro Terminal v35 — Requirements
+# تشغيل: pip install -r requirements.txt
+
+# ── Core ──────────────────────────────────────────────────────
 streamlit>=1.32.0
 pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.18.0
 
-# Finance
+# ── Finance ───────────────────────────────────────────────────
 yfinance>=0.2.36
 
-# ML/AI
+# ── ML / Statistics ───────────────────────────────────────────
 scikit-learn>=1.4.0
 scipy>=1.10.0
 
-# AI APIs
+# ── AI ────────────────────────────────────────────────────────
 google-generativeai>=0.8.0
 
-# Database (built-in Python, no install needed: sqlite3, json, os)
-
-# Testing
+# ── Testing ───────────────────────────────────────────────────
 pytest>=7.0.0
 
-# Optional (for production)
-# arch>=6.0.0  # Real GARCH models
-# ta>=0.11.0   # Additional technical indicators
+# ── اختياري للإنتاج ──────────────────────────────────────────
+# arch>=6.0.0        # GARCH حقيقي
+# redis>=5.0.0       # لـ Backend/FastAPI
+# fastapi>=0.110.0   # لـ REST API
+# uvicorn>=0.27.0    # ASGI Server
