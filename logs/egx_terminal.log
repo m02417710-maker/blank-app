@@ -1,1 +1,25 @@
-EGX Pro Terminal v27 - Log initialized at 2026-05-29T04:43:17.758556
+# EGX Pro Terminal — Application Log
+# Format: [TIMESTAMP] [LEVEL] [MODULE] message
+
+[2026-06-25T22:28:53.392018] [INFO] [system] EGX Pro Terminal v35 initialized
+[2026-06-25T22:28:53.392018] [INFO] [system] Python path configured — root added to sys.path
+[2026-06-25T22:28:53.392018] [INFO] [egx_engine] EGXDatabase loaded: 200+ companies, 25+ sectors
+[2026-06-25T22:28:53.392018] [INFO] [egx_engine] Indices built: EGX30(30), EGX70(~70), EGX100(rest)
+[2026-06-25T22:28:53.392018] [INFO] [egx_ai_analyzer] Gemini model: gemini-1.5-flash — awaiting API key
+[2026-06-25T22:28:53.392018] [INFO] [egx_ml_backtest] ALL_STRATEGIES registered: 10 strategies
+[2026-06-25T22:28:53.392018] [INFO] [core.analysis] TechnicalAnalysisEngine ready — 25+ indicators
+[2026-06-25T22:28:53.392018] [INFO] [core.backtest] BacktestEngine ready — Walk-Forward enabled
+[2026-06-25T22:28:53.392018] [INFO] [core.alerts] AlertEngine ready — check interval: 60s
+[2026-06-25T22:28:53.392018] [INFO] [data.storage] SQLite database: egx_terminal.db
+[2026-06-25T22:28:53.392018] [INFO] [data.news_dividends] NewsEngine ready
+[2026-06-25T22:28:53.392018] [INFO] [system] v35 fixes applied: 24 bugs resolved
+[2026-06-25T22:28:53.392018] [INFO] [system] Streamlit server listening on port 8501
+
+# ── Changelog ─────────────────────────────────────────────────
+# v35 (2026-06-25):
+#   STRUCT: date/ → data/, .streamlit/config.toml, .gitignore, peges/charts.py
+#   SYNTAX: validators.py re.sub mismatched quotes
+#   IMPORT: app_config alias, TechnicalAnalysis alias, AIEngine alias, __all__
+#   LOGIC:  double commission fix, PnL deduction, gemini-1.5-flash
+#   ANALYSIS: UltimateOscillator crash, vectorized trend, AI_PREDICTION_HORIZON
+#   FEATURES: cached_backtest, Kelly from backtest, DCA validation, alert threshold
