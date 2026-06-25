@@ -1,3 +1,34 @@
+# EGX Pro Terminal v35 — Streamlit Configuration
+
+[theme]
+primaryColor        = "#f59e0b"
+backgroundColor     = "#0a0e1a"
+secondaryBackgroundColor = "#1a1f2e"
+textColor           = "#e2e8f0"
+font                = "sans serif"
+
+[server]
+headless            = true
+enableCORS          = false
+enableXsrfProtection = true
+maxUploadSize       = 50
+port                = 8501
+
+[browser]
+gatherUsageStats    = false
+serverAddress       = "localhost"
+
+[runner]
+postScriptGC        = true
+magicEnabled        = false
+fastReruns          = true
+
+[logger]
+level               = "warning"
+
+[client]
+showErrorDetails    = false
+toolbarMode         = "minimal"
 [theme]
 primaryColor = "#1f6feb"
 backgroundColor = "#0e1117"
