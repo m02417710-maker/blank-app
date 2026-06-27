@@ -1,0 +1,60 @@
+# EGX Pro Terminal v35 — Git Ignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+*.pyo
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Environment & secrets
+.env
+*.env
+.env.local
+.streamlit/secrets.toml
+
+# Database & storage
+*.db
+*.sqlite
+*.sqlite3
+egx_terminal.db
+
+# Logs
+logs/
+*.log
+
+# Backups (keep folder, ignore old files)
+backups/*.backup
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+.dockerignore
+
+# Node (future frontend)
+node_modules/
+.next/
